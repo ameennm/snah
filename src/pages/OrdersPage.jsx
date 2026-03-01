@@ -4,14 +4,15 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus } from 'react-icons/fi';
 
 export default function OrdersPage() {
-    const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomer, addOrder, updateOrder } = useApp();
+    const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomer, addOrder, updateOrder, deleteOrder } = useApp();
     const [search, setSearch] = useState('');
     const [showCreate, setShowCreate] = useState(false);
     const [viewOrder, setViewOrder] = useState(null);
     const [paymentFilter, setPaymentFilter] = useState('all');
 
-    // Customer inline form (not separate dropdown)
+    // Customer inline form
     const [customerName, setCustomerName] = useState('');
+    const [countryCode, setCountryCode] = useState('91');
     const [customerPhone, setCustomerPhone] = useState('');
     const [customerAddress, setCustomerAddress] = useState('');
     const [customerArea, setCustomerArea] = useState('');
@@ -20,12 +21,17 @@ export default function OrdersPage() {
     const [orderItems, setOrderItems] = useState([{ productId: '', quantity: 1 }]);
     const [paymentStatus, setPaymentStatus] = useState('not_paid');
 
-    // Auto-match customer by phone
+    // Auto-match customer by phone (combine country code + phone)
+    const fullPhone = useMemo(() => {
+        const cleaned = customerPhone.replace(/[^0-9]/g, '');
+        const code = countryCode.replace(/[^0-9]/g, '');
+        return code + cleaned;
+    }, [countryCode, customerPhone]);
+
     const matchedCustomer = useMemo(() => {
         if (!customerPhone || customerPhone.length < 5) return null;
-        const cleaned = customerPhone.replace(/[^0-9]/g, '');
-        return customers.find((c) => c.phone.replace(/[^0-9]/g, '') === cleaned);
-    }, [customerPhone, customers]);
+        return customers.find((c) => c.phone.replace(/[^0-9]/g, '') === fullPhone);
+    }, [fullPhone, customers]);
 
     const filtered = orders
         .filter((o) => {
@@ -57,39 +63,39 @@ export default function OrdersPage() {
         let subtotal = 0;
         let gstTotal = 0;
         orderItems.forEach((item) => {
+            if (!item.productId || !item.quantity) return;
             const product = getProductById(Number(item.productId));
-            if (product) {
-                const lineTotal = product.sellingPrice * item.quantity;
-                const lineGst = (lineTotal * product.gst) / 100;
-                subtotal += lineTotal;
-                gstTotal += lineGst;
-            }
+            if (!product) return;
+            const lineSubtotal = product.sellingPrice * Number(item.quantity);
+            const lineGst = (lineSubtotal * product.gst) / 100;
+            subtotal += lineSubtotal;
+            gstTotal += lineGst;
         });
         return { subtotal, gstTotal, total: subtotal + gstTotal };
     };
 
     const resetForm = () => {
-        setShowCreate(false);
         setCustomerName('');
         setCustomerPhone('');
+        setCountryCode('91');
         setCustomerAddress('');
         setCustomerArea('');
         setOrderItems([{ productId: '', quantity: 1 }]);
         setPaymentStatus('not_paid');
+        setShowCreate(false);
     };
 
     const handleCreateOrder = async () => {
         const validItems = orderItems.filter((i) => i.productId && i.quantity > 0);
         if (!customerName || !customerPhone || validItems.length === 0) return;
 
-        // Resolve customer: use matched or create new
         let customerId;
         if (matchedCustomer) {
             customerId = matchedCustomer.id;
         } else {
             const newCustomer = await addCustomer({
                 name: customerName,
-                phone: customerPhone.replace(/[^0-9]/g, ''),
+                phone: fullPhone,
                 address: customerAddress,
                 area: customerArea,
             });
@@ -135,26 +141,24 @@ export default function OrdersPage() {
         }
     };
 
+    const handleDeleteOrder = async (orderId) => {
+        if (window.confirm('Are you sure you want to delete this order? Stock will be restored.')) {
+            await deleteOrder(orderId);
+            setViewOrder(null);
+        }
+    };
+
     const formatCurrency = (val) =>
         '₹' + Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    const getPaymentBadge = (status) => {
-        const map = { paid: 'badge-paid', not_paid: 'badge-unpaid', partial: 'badge-partial' };
-        const labels = { paid: 'Paid', not_paid: 'Not Paid', partial: 'Partial' };
-        return <span className={`badge ${map[status]}`}>{labels[status]}</span>;
+    const formatDate = (dateStr) => {
+        if (!dateStr) return '—';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '—';
+        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     };
 
-    const getStatusBadge = (status) => {
-        const map = {
-            pending: 'badge-pending',
-            shipped: 'badge-shipped',
-            delivered: 'badge-delivered',
-        };
-        const labels = { pending: 'Pending', shipped: 'Shipped', delivered: 'Delivered' };
-        return <span className={`badge ${map[status]}`}>{labels[status]}</span>;
-    };
-
-    const orderTotals = calculateOrderTotal();
+    const { subtotal, gstTotal, total } = calculateOrderTotal();
 
     return (
         <>
@@ -211,7 +215,7 @@ export default function OrdersPage() {
                                     <tr key={order.id}>
                                         <td className="font-mono font-bold">{order.id}</td>
                                         <td>{customer?.name || 'Unknown'}</td>
-                                        <td>{order.items.length} item(s)</td>
+                                        <td>{order.items?.length || 0} item(s)</td>
                                         <td>{formatCurrency(order.subtotal)}</td>
                                         <td>{formatCurrency(order.gstAmount)}</td>
                                         <td className="font-bold">{formatCurrency(order.total)}</td>
@@ -219,8 +223,7 @@ export default function OrdersPage() {
                                             <select
                                                 value={order.paymentStatus}
                                                 onChange={(e) => handlePaymentChange(order.id, e.target.value)}
-                                                className={`badge ${order.paymentStatus === 'paid' ? 'badge-paid' : order.paymentStatus === 'partial' ? 'badge-partial' : 'badge-unpaid'}`}
-                                                style={{ cursor: 'pointer', padding: '4px 8px', border: 'none', fontSize: '0.75rem', fontWeight: 600, borderRadius: '9999px', appearance: 'none', WebkitAppearance: 'none', backgroundImage: 'none', textAlign: 'center', minWidth: '80px' }}
+                                                className={`status-select ${order.paymentStatus === 'paid' ? 'status-paid' : order.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid'}`}
                                             >
                                                 <option value="paid">Paid</option>
                                                 <option value="not_paid">Not Paid</option>
@@ -231,28 +234,33 @@ export default function OrdersPage() {
                                             <select
                                                 value={order.status}
                                                 onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                                                className={`badge ${order.status === 'delivered' ? 'badge-delivered' : order.status === 'shipped' ? 'badge-shipped' : 'badge-pending'}`}
-                                                style={{ cursor: 'pointer', padding: '4px 8px', border: 'none', fontSize: '0.75rem', fontWeight: 600, borderRadius: '9999px', appearance: 'none', WebkitAppearance: 'none', backgroundImage: 'none', textAlign: 'center', minWidth: '80px' }}
+                                                className={`status-select ${order.status === 'delivered' ? 'status-delivered' : order.status === 'shipped' ? 'status-shipped' : 'status-pending'}`}
                                             >
                                                 <option value="pending">Pending</option>
                                                 <option value="shipped">Shipped</option>
                                                 <option value="delivered">Delivered</option>
                                             </select>
                                         </td>
+                                        <td>{formatDate(order.createdAt)}</td>
                                         <td>
-                                            {new Date(order.createdAt).toLocaleDateString('en-IN', {
-                                                day: '2-digit',
-                                                month: 'short',
-                                            })}
-                                        </td>
-                                        <td>
-                                            <button
-                                                className="btn btn-secondary btn-sm btn-icon"
-                                                title="View Details"
-                                                onClick={() => setViewOrder(order)}
-                                            >
-                                                <FiEye size={14} />
-                                            </button>
+                                            <div className="flex gap-8">
+                                                <button
+                                                    className="btn btn-secondary btn-sm btn-icon"
+                                                    title="View"
+                                                    onClick={() => setViewOrder(order)}
+                                                >
+                                                    <FiEye size={14} />
+                                                </button>
+                                                {hasPermission('createOrder') && (
+                                                    <button
+                                                        className="btn btn-secondary btn-sm btn-icon"
+                                                        title="Delete"
+                                                        onClick={() => handleDeleteOrder(order.id)}
+                                                    >
+                                                        <FiTrash2 size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -280,20 +288,40 @@ export default function OrdersPage() {
                     onClose={resetForm}
                     footer={
                         <>
-                            <button className="btn btn-secondary" onClick={resetForm}>
-                                Cancel
-                            </button>
-                            <button className="btn btn-primary" onClick={handleCreateOrder} id="submit-order-btn">
-                                Create Order
+                            <button className="btn btn-secondary" onClick={resetForm}>Cancel</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleCreateOrder}
+                                disabled={!customerName || !customerPhone || orderItems.filter(i => i.productId).length === 0}
+                                id="submit-order-btn"
+                            >
+                                Create Order — {formatCurrency(total)}
                             </button>
                         </>
                     }
                 >
-                    {/* ====== CUSTOMER SECTION ====== */}
-                    <label style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Customer Details
-                    </label>
-                    <div className="form-row">
+                    {/* Customer Section */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <h3 style={{ fontSize: '0.875rem', fontWeight: 700, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {matchedCustomer ? (
+                                <><FiUserCheck style={{ color: 'var(--success-600)' }} /> Existing Customer</>
+                            ) : customerPhone.length >= 5 ? (
+                                <><FiUserPlus style={{ color: 'var(--primary-600)' }} /> New Customer</>
+                            ) : '👤 Customer Details'}
+                        </h3>
+                        {matchedCustomer && (
+                            <div style={{
+                                background: 'var(--success-50)',
+                                border: '1px solid var(--success-100)',
+                                borderRadius: 'var(--radius-md)',
+                                padding: '10px 14px',
+                                marginBottom: '12px',
+                                fontSize: '0.8125rem',
+                                color: 'var(--success-700)',
+                            }}>
+                                ✓ Customer found: <strong>{matchedCustomer.name}</strong> — {matchedCustomer.area}
+                            </div>
+                        )}
                         <div className="form-group">
                             <label>Customer Name *</label>
                             <input
@@ -303,199 +331,153 @@ export default function OrdersPage() {
                                 disabled={!!matchedCustomer}
                             />
                         </div>
-                        <div className="form-group">
+                        <div className="form-group" style={{ marginTop: '12px' }}>
                             <label>Phone Number *</label>
-                            <input
-                                placeholder="e.g. 919876543210"
-                                value={customerPhone}
-                                onChange={(e) => setCustomerPhone(e.target.value)}
-                            />
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <input
+                                    type="text"
+                                    placeholder="91"
+                                    value={countryCode}
+                                    onChange={(e) => setCountryCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+                                    style={{ maxWidth: '70px', textAlign: 'center', fontWeight: 600 }}
+                                />
+                                <input
+                                    type="tel"
+                                    placeholder="Enter phone number"
+                                    value={customerPhone}
+                                    onChange={(e) => setCustomerPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                                    style={{ flex: 1 }}
+                                />
+                            </div>
                         </div>
+                        {!matchedCustomer && customerPhone.length >= 5 && (
+                            <div className="form-row" style={{ marginTop: '12px' }}>
+                                <div className="form-group">
+                                    <label>Address</label>
+                                    <input placeholder="Address" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Area / City</label>
+                                    <input placeholder="Area" value={customerArea} onChange={(e) => setCustomerArea(e.target.value)} />
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Auto-match indicator */}
-                    {customerPhone.length >= 5 && (
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '10px 14px',
-                                borderRadius: 'var(--radius-md)',
-                                fontSize: '0.8125rem',
-                                fontWeight: 600,
-                                background: matchedCustomer ? 'var(--success-50)' : 'var(--primary-50)',
-                                color: matchedCustomer ? 'var(--success-700)' : 'var(--primary-700)',
-                                border: `1px solid ${matchedCustomer ? 'var(--success-100)' : 'var(--primary-100)'}`,
-                            }}
-                        >
-                            {matchedCustomer ? (
-                                <>
-                                    <FiUserCheck size={16} />
-                                    Existing customer: <strong>{matchedCustomer.name}</strong> — {matchedCustomer.area}
-                                </>
-                            ) : (
-                                <>
-                                    <FiUserPlus size={16} />
-                                    New customer will be created automatically
-                                </>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Extra fields only for new customers */}
-                    {!matchedCustomer && (
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label>Address</label>
-                                <input
-                                    placeholder="Enter address"
-                                    value={customerAddress}
-                                    onChange={(e) => setCustomerAddress(e.target.value)}
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Area / City</label>
-                                <input
-                                    placeholder="Enter area"
-                                    value={customerArea}
-                                    onChange={(e) => setCustomerArea(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ====== ORDER ITEMS ====== */}
-                    <label style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '4px' }}>
-                        Order Items
-                    </label>
-
-                    {orderItems.map((item, index) => {
-                        const product = getProductById(Number(item.productId));
-                        return (
-                            <div
-                                key={index}
-                                style={{
-                                    background: 'var(--gray-50)',
-                                    borderRadius: 'var(--radius-md)',
-                                    padding: '16px',
-                                    border: '1px solid var(--border-light)',
-                                }}
-                            >
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>Product</label>
-                                        <select
-                                            value={item.productId}
-                                            onChange={(e) => updateItem(index, 'productId', e.target.value)}
-                                        >
+                    {/* Items Section */}
+                    <div>
+                        <h3 style={{ fontSize: '0.875rem', fontWeight: 700, marginBottom: '12px' }}>📦 Order Items</h3>
+                        {orderItems.map((item, index) => {
+                            const product = item.productId ? getProductById(Number(item.productId)) : null;
+                            return (
+                                <div key={index} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'flex-end' }}>
+                                    <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
+                                        {index === 0 && <label>Product</label>}
+                                        <select value={item.productId} onChange={(e) => updateItem(index, 'productId', e.target.value)}>
                                             <option value="">Select product</option>
                                             {products.map((p) => (
-                                                <option key={p.id} value={p.id} disabled={p.stock <= 0}>
-                                                    {p.name} (Stock: {p.stock})
+                                                <option key={p.id} value={p.id}>
+                                                    {p.name} — ₹{p.sellingPrice} (Stock: {p.stock})
                                                 </option>
                                             ))}
                                         </select>
                                     </div>
-                                    <div className="form-group">
-                                        <label>Quantity</label>
-                                        <div className="flex gap-8 items-center">
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                max={product?.stock || 999}
-                                                value={item.quantity}
-                                                onChange={(e) => updateItem(index, 'quantity', Number(e.target.value))}
-                                            />
-                                            {orderItems.length > 1 && (
-                                                <button
-                                                    className="btn btn-danger btn-sm btn-icon"
-                                                    onClick={() => removeItem(index)}
-                                                >
-                                                    <FiTrash2 size={14} />
-                                                </button>
-                                            )}
-                                        </div>
+                                    <div className="form-group" style={{ flex: 0.7, marginBottom: 0 }}>
+                                        {index === 0 && <label>Qty</label>}
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max={product?.stock || 999}
+                                            value={item.quantity}
+                                            onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                                        />
                                     </div>
+                                    <div style={{ flex: 0.8, textAlign: 'right', paddingBottom: '8px' }}>
+                                        {product && (
+                                            <span className="font-bold">
+                                                {formatCurrency(product.sellingPrice * Number(item.quantity || 0))}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {orderItems.length > 1 && (
+                                        <button
+                                            className="btn btn-secondary btn-sm btn-icon"
+                                            onClick={() => removeItem(index)}
+                                            style={{ marginBottom: '4px' }}
+                                        >
+                                            <FiTrash2 size={14} />
+                                        </button>
+                                    )}
                                 </div>
-                                {product && (
-                                    <div style={{ marginTop: '8px', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
-                                        Price: {formatCurrency(product.sellingPrice)} | GST: {product.gst}% |
-                                        Line Total: {formatCurrency(product.sellingPrice * item.quantity + (product.sellingPrice * item.quantity * product.gst / 100))}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-
-                    <button className="btn btn-secondary" onClick={addItem}>
-                        <FiPlus /> Add Another Item
-                    </button>
-
-                    <div className="form-group">
-                        <label>Payment Status</label>
-                        <select
-                            value={paymentStatus}
-                            onChange={(e) => setPaymentStatus(e.target.value)}
-                        >
-                            <option value="paid">Paid</option>
-                            <option value="not_paid">Not Paid</option>
-                            <option value="partial">Partial</option>
-                        </select>
+                            );
+                        })}
+                        <button className="btn btn-secondary btn-sm" onClick={addItem} style={{ marginTop: '4px' }}>
+                            <FiPlus size={14} /> Add Item
+                        </button>
                     </div>
 
-                    {/* Order Total */}
-                    <div
-                        style={{
-                            background: 'var(--primary-50)',
-                            padding: '16px',
-                            borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--primary-100)',
-                        }}
-                    >
-                        <div className="flex justify-between" style={{ marginBottom: '6px' }}>
-                            <span style={{ color: 'var(--text-secondary)' }}>Subtotal:</span>
-                            <span className="font-bold">{formatCurrency(orderTotals.subtotal)}</span>
+                    {/* Summary */}
+                    <div style={{
+                        marginTop: '20px',
+                        padding: '16px',
+                        background: 'var(--gray-50)',
+                        borderRadius: 'var(--radius-md)',
+                        display: 'flex', flexDirection: 'column', gap: '8px',
+                    }}>
+                        <div className="flex justify-between">
+                            <span className="text-muted">Subtotal</span>
+                            <span>{formatCurrency(subtotal)}</span>
                         </div>
-                        <div className="flex justify-between" style={{ marginBottom: '6px' }}>
-                            <span style={{ color: 'var(--text-secondary)' }}>GST:</span>
-                            <span className="font-bold">{formatCurrency(orderTotals.gstTotal)}</span>
+                        <div className="flex justify-between">
+                            <span className="text-muted">GST</span>
+                            <span>{formatCurrency(gstTotal)}</span>
                         </div>
-                        <div
-                            className="flex justify-between"
-                            style={{
-                                borderTop: '1px solid var(--primary-200)',
-                                paddingTop: '8px',
-                                fontSize: '1.125rem',
-                            }}
-                        >
-                            <span className="font-bold">Total:</span>
-                            <span className="font-bold" style={{ color: 'var(--primary-700)' }}>
-                                {formatCurrency(orderTotals.total)}
-                            </span>
+                        <div className="flex justify-between" style={{ borderTop: '1px solid var(--border-light)', paddingTop: '8px', fontWeight: 700, fontSize: '1.0625rem' }}>
+                            <span>Total</span>
+                            <span style={{ color: 'var(--primary-700)' }}>{formatCurrency(total)}</span>
                         </div>
+                    </div>
+
+                    {/* Payment Status */}
+                    <div className="form-group" style={{ marginTop: '16px' }}>
+                        <label>Payment Status</label>
+                        <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}>
+                            <option value="not_paid">Not Paid</option>
+                            <option value="paid">Paid</option>
+                            <option value="partial">Partial</option>
+                        </select>
                     </div>
                 </Modal>
             )}
 
-            {/* View Order Detail Modal */}
+            {/* View Order Modal */}
             {viewOrder && (
                 <Modal
                     title={`Order ${viewOrder.id}`}
                     onClose={() => setViewOrder(null)}
+                    footer={
+                        <>
+                            {hasPermission('createOrder') && (
+                                <button className="btn btn-danger" onClick={() => handleDeleteOrder(viewOrder.id)}>
+                                    <FiTrash2 size={14} /> Delete Order
+                                </button>
+                            )}
+                            <button className="btn btn-secondary" onClick={() => setViewOrder(null)}>Close</button>
+                        </>
+                    }
                 >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <div className="flex justify-between">
                             <span className="text-muted">Customer</span>
-                            <span className="font-bold">{getCustomerById(viewOrder.customerId)?.name}</span>
+                            <span className="font-bold">{getCustomerById(viewOrder.customerId)?.name || 'Unknown'}</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted">Phone</span>
-                            <span className="font-mono">{getCustomerById(viewOrder.customerId)?.phone}</span>
+                            <span className="font-mono">{getCustomerById(viewOrder.customerId)?.phone || '—'}</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted">Date</span>
-                            <span>{new Date(viewOrder.createdAt).toLocaleDateString('en-IN')}</span>
+                            <span>{formatDate(viewOrder.createdAt)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-muted">Payment</span>
@@ -523,64 +505,60 @@ export default function OrdersPage() {
                         </div>
                         {viewOrder.trackingId && (
                             <div className="flex justify-between">
-                                <span className="text-muted">Tracking ID</span>
+                                <span className="text-muted">Tracking</span>
                                 <span className="font-mono">{viewOrder.trackingId}</span>
                             </div>
                         )}
                     </div>
 
-                    <div className="table-container" style={{ marginTop: '12px' }}>
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Product</th>
-                                    <th>Qty</th>
-                                    <th>Price</th>
-                                    <th>GST</th>
-                                    <th>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {viewOrder.items.map((item, i) => {
-                                    const product = getProductById(item.productId);
-                                    const lineTotal = item.price * item.quantity;
-                                    const lineGst = (lineTotal * item.gst) / 100;
-                                    return (
-                                        <tr key={i}>
-                                            <td>{product?.name}</td>
-                                            <td>{item.quantity}</td>
-                                            <td>{formatCurrency(item.price)}</td>
-                                            <td>{formatCurrency(lineGst)}</td>
-                                            <td className="font-bold">{formatCurrency(lineTotal + lineGst)}</td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                    <div style={{ marginTop: '20px' }}>
+                        <h4 style={{ fontSize: '0.8125rem', fontWeight: 700, marginBottom: '10px', color: 'var(--text-secondary)' }}>ITEMS</h4>
+                        <div className="table-container">
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Qty</th>
+                                        <th>Price</th>
+                                        <th>GST</th>
+                                        <th>Line Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {viewOrder.items?.map((item, i) => {
+                                        const prod = getProductById(item.productId);
+                                        const lineGst = (item.price * item.quantity * item.gst) / 100;
+                                        return (
+                                            <tr key={i}>
+                                                <td className="font-bold">{prod?.name || 'Unknown'}</td>
+                                                <td>{item.quantity}</td>
+                                                <td>{formatCurrency(item.price)}</td>
+                                                <td>{formatCurrency(lineGst)}</td>
+                                                <td className="font-bold">{formatCurrency(item.price * item.quantity + lineGst)}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
-                    <div
-                        style={{
-                            background: 'var(--gray-50)',
-                            padding: '16px',
-                            borderRadius: 'var(--radius-md)',
-                            marginTop: '8px',
-                        }}
-                    >
-                        <div className="flex justify-between" style={{ marginBottom: '4px' }}>
-                            <span>Subtotal</span>
+                    <div style={{
+                        marginTop: '16px', padding: '16px',
+                        background: 'var(--gray-50)', borderRadius: 'var(--radius-md)',
+                        display: 'flex', flexDirection: 'column', gap: '8px',
+                    }}>
+                        <div className="flex justify-between">
+                            <span className="text-muted">Subtotal</span>
                             <span>{formatCurrency(viewOrder.subtotal)}</span>
                         </div>
-                        <div className="flex justify-between" style={{ marginBottom: '4px' }}>
-                            <span>GST</span>
+                        <div className="flex justify-between">
+                            <span className="text-muted">GST</span>
                             <span>{formatCurrency(viewOrder.gstAmount)}</span>
                         </div>
-                        <div
-                            className="flex justify-between font-bold"
-                            style={{ borderTop: '1px solid var(--border-light)', paddingTop: '8px', fontSize: '1.0625rem' }}
-                        >
+                        <div className="flex justify-between" style={{ borderTop: '1px solid var(--border-light)', paddingTop: '8px', fontWeight: 700, fontSize: '1.125rem' }}>
                             <span>Grand Total</span>
-                            <span>{formatCurrency(viewOrder.total)}</span>
+                            <span style={{ color: 'var(--primary-700)' }}>{formatCurrency(viewOrder.total)}</span>
                         </div>
                     </div>
                 </Modal>

@@ -64,6 +64,8 @@ function appReducer(state, action) {
         }
         case 'UPDATE_ORDER':
             return { ...state, orders: state.orders.map(o => o.id === action.payload.id ? { ...o, ...action.payload } : o) };
+        case 'DELETE_ORDER':
+            return { ...state, orders: state.orders.filter(o => o.id !== action.payload) };
 
         case 'ADD_LEDGER_ENTRY':
             return { ...state, ledger: [action.payload, ...state.ledger] };
@@ -197,6 +199,14 @@ export function AppProvider({ children }) {
         dispatch({ type: 'UPDATE_ORDER', payload: { id, ...data } });
     }, []);
 
+    const deleteOrder = useCallback(async (id) => {
+        await api(`/orders/${id}`, { method: 'DELETE' });
+        dispatch({ type: 'DELETE_ORDER', payload: id });
+        // Refresh products to get updated stock
+        const products = await api('/products');
+        dispatch({ type: 'SET_PRODUCTS', payload: products });
+    }, []);
+
     // ====== LEDGER ======
     const addLedgerEntry = useCallback(async (data) => {
         const result = await api('/ledger', { method: 'POST', body: data });
@@ -239,6 +249,7 @@ export function AppProvider({ children }) {
         deleteProduct,
         addOrder,
         updateOrder,
+        deleteOrder,
         addLedgerEntry,
         deleteLedgerEntry,
         getCustomerById,

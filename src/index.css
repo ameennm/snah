@@ -1174,6 +1174,61 @@ table {
 }
 
 /* ============================================
+   STATUS SELECT DROPDOWNS
+   ============================================ */
+
+.status-select {
+  padding: 5px 28px 5px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8.825a.5.5 0 0 1-.354-.146l-3.5-3.5a.5.5 0 1 1 .708-.708L6 7.618l3.146-3.147a.5.5 0 0 1 .708.708l-3.5 3.5A.5.5 0 0 1 6 8.825z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  width: auto;
+  min-width: 100px;
+}
+
+.status-paid {
+  background: var(--success-50);
+  color: var(--success-700);
+  border-color: var(--success-100);
+}
+
+.status-unpaid {
+  background: var(--danger-50);
+  color: var(--danger-600);
+  border-color: var(--danger-100);
+}
+
+.status-partial {
+  background: var(--warning-50);
+  color: var(--warning-600);
+  border-color: var(--warning-100);
+}
+
+.status-pending {
+  background: var(--gray-100);
+  color: var(--gray-600);
+  border-color: var(--gray-200);
+}
+
+.status-shipped {
+  background: var(--primary-50);
+  color: var(--primary-700);
+  border-color: var(--primary-200);
+}
+
+.status-delivered {
+  background: var(--success-50);
+  color: var(--success-700);
+  border-color: var(--success-100);
+}
+
+/* ============================================
    RESPONSIVE
    ============================================ */
 
@@ -1217,28 +1272,50 @@ table {
   }
 
   .page-content {
-    padding: 20px 16px;
+    padding: 16px 12px;
   }
 
   .stats-grid {
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 10px;
   }
 
   .stat-card {
-    padding: 16px;
+    padding: 14px;
   }
 
   .stat-value {
-    font-size: 1.375rem;
+    font-size: 1.25rem;
+  }
+
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
   }
 
   .profit-summary {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .profit-card {
+    padding: 18px;
+  }
+
+  .profit-card .amount {
+    font-size: 1.5rem;
   }
 
   .card-header {
-    padding: 16px;
+    padding: 14px 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .card-header h2 {
+    font-size: 1rem;
   }
 
   .card-body {
@@ -1249,27 +1326,94 @@ table {
     grid-template-columns: 1fr;
   }
 
+  .modal-overlay {
+    padding: 8px;
+    align-items: flex-end;
+  }
+
   .modal {
     max-width: 100%;
-    margin: 10px;
+    max-height: 95vh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  .modal-header {
+    padding: 20px 20px 0;
+  }
+
+  .modal-body {
+    padding: 20px;
+  }
+
+  .modal-footer {
+    padding: 0 20px 20px;
+    flex-direction: column;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .header {
-    padding: 0 16px;
+    padding: 0 12px;
   }
 
   .header-title p {
     display: none;
   }
 
+  .header-title h1 {
+    font-size: 1.0625rem;
+  }
+
   .login-card {
     padding: 32px 24px;
+  }
+
+  .data-table {
+    font-size: 0.8125rem;
+  }
+
+  .data-table thead th {
+    padding: 10px 12px;
+    font-size: 0.6875rem;
+  }
+
+  .data-table tbody td {
+    padding: 10px 12px;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .filters-row {
+    width: 100%;
+  }
+
+  .search-bar {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .btn {
+    padding: 10px 14px;
+    font-size: 0.8125rem;
+  }
+
+  .status-select {
+    font-size: 0.6875rem;
+    padding: 4px 22px 4px 8px;
+    min-width: 80px;
   }
 }
 
 @media (max-width: 480px) {
   .stats-grid {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .filters-row {
@@ -1277,8 +1421,23 @@ table {
     align-items: stretch;
   }
 
-  .search-bar {
-    max-width: 100%;
+  .stat-card {
+    flex-direction: row;
+    align-items: center;
+    padding: 12px 16px;
+  }
+
+  .stat-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .stat-value {
+    font-size: 1.125rem;
+  }
+
+  .page-content {
+    padding: 12px 8px;
   }
 }
 
