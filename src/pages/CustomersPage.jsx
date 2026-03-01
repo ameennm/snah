@@ -4,7 +4,7 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiEye } from 'react-icons/fi';
 
 export default function CustomersPage() {
-    const { customers, orders, dispatch, hasPermission, getProductById } = useApp();
+    const { customers, orders, hasPermission, getProductById, addCustomer, updateCustomer, deleteCustomer } = useApp();
     const [search, setSearch] = useState('');
     const [showAdd, setShowAdd] = useState(false);
     const [editCustomer, setEditCustomer] = useState(null);
@@ -15,7 +15,7 @@ export default function CustomersPage() {
         (c) =>
             c.name.toLowerCase().includes(search.toLowerCase()) ||
             c.phone.includes(search) ||
-            c.area.toLowerCase().includes(search.toLowerCase())
+            (c.area || '').toLowerCase().includes(search.toLowerCase())
     );
 
     const openAdd = () => {
@@ -28,21 +28,21 @@ export default function CustomersPage() {
         setEditCustomer(customer);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!form.name || !form.phone) return;
         if (editCustomer) {
-            dispatch({ type: 'UPDATE_CUSTOMER', payload: { ...editCustomer, ...form } });
+            await updateCustomer({ ...editCustomer, ...form });
             setEditCustomer(null);
         } else {
-            dispatch({ type: 'ADD_CUSTOMER', payload: form });
+            await addCustomer(form);
             setShowAdd(false);
         }
         setForm({ name: '', phone: '', address: '', area: '' });
     };
 
-    const handleDelete = (id) => {
+    const handleDelete = async (id) => {
         if (window.confirm('Are you sure you want to delete this customer?')) {
-            dispatch({ type: 'DELETE_CUSTOMER', payload: id });
+            await deleteCustomer(id);
         }
     };
 

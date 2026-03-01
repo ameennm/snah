@@ -98,7 +98,9 @@
    GLOBAL RESET & BASE
    ============================================ */
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -130,7 +132,9 @@ button {
   font-size: inherit;
 }
 
-input, select, textarea {
+input,
+select,
+textarea {
   font-family: inherit;
   font-size: inherit;
   border: 1px solid var(--border-light);
@@ -143,7 +147,9 @@ input, select, textarea {
   width: 100%;
 }
 
-input:focus, select:focus, textarea:focus {
+input:focus,
+select:focus,
+textarea:focus {
   border-color: var(--primary-500);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
@@ -225,8 +231,15 @@ table {
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-30px); }
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-30px);
+  }
 }
 
 .login-card {
@@ -243,8 +256,15 @@ table {
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .login-logo {
@@ -441,7 +461,8 @@ table {
   font-weight: 600;
 }
 
-.nav-item svg, .nav-item .nav-icon {
+.nav-item svg,
+.nav-item .nav-icon {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
@@ -939,8 +960,13 @@ table {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .modal {
@@ -955,8 +981,15 @@ table {
 }
 
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .modal-header {
@@ -1253,18 +1286,70 @@ table {
    UTILITY HELPERS
    ============================================ */
 
-.text-right { text-align: right; }
-.text-center { text-align: center; }
-.text-success { color: var(--success-600); }
-.text-danger { color: var(--danger-600); }
-.text-warning { color: var(--warning-600); }
-.text-muted { color: var(--text-tertiary); }
-.font-mono { font-family: 'SF Mono', 'Fira Code', monospace; }
-.font-bold { font-weight: 700; }
-.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mt-4 { margin-top: 16px; }
-.mb-4 { margin-bottom: 16px; }
-.gap-8 { gap: 8px; }
-.flex { display: flex; }
-.items-center { align-items: center; }
-.justify-between { justify-content: space-between; }
+.text-right {
+  text-align: right;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-success {
+  color: var(--success-600);
+}
+
+.text-danger {
+  color: var(--danger-600);
+}
+
+.text-warning {
+  color: var(--warning-600);
+}
+
+.text-muted {
+  color: var(--text-tertiary);
+}
+
+.font-mono {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mt-4 {
+  margin-top: 16px;
+}
+
+.mb-4 {
+  margin-bottom: 16px;
+}
+
+.gap-8 {
+  gap: 8px;
+}
+
+.flex {
+  display: flex;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

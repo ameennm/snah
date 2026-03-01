@@ -4,7 +4,7 @@ import { FiSearch, FiSave } from 'react-icons/fi';
 import { FaWhatsapp } from 'react-icons/fa';
 
 export default function TrackingPage() {
-    const { orders, dispatch, hasPermission, getCustomerById, getProductById } = useApp();
+    const { orders, hasPermission, getCustomerById, getProductById, updateOrder } = useApp();
     const [search, setSearch] = useState('');
     const [editingId, setEditingId] = useState(null);
     const [trackingInput, setTrackingInput] = useState('');
@@ -27,12 +27,9 @@ export default function TrackingPage() {
         setTrackingInput(order.trackingId || '');
     };
 
-    const saveTracking = (orderId) => {
+    const saveTracking = async (orderId) => {
         if (!trackingInput.trim()) return;
-        dispatch({
-            type: 'UPDATE_TRACKING',
-            payload: { orderId, trackingId: trackingInput.trim() },
-        });
+        await updateOrder(orderId, { trackingId: trackingInput.trim(), status: 'shipped' });
         setEditingId(null);
         setTrackingInput('');
     };

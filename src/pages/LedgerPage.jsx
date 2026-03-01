@@ -4,7 +4,7 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiArrowUpRight, FiArrowDownLeft } from 'react-icons/fi';
 
 export default function LedgerPage() {
-    const { ledger, dispatch, hasPermission } = useApp();
+    const { ledger, hasPermission, addLedgerEntry, deleteLedgerEntry } = useApp();
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
     const [showAdd, setShowAdd] = useState(false);
@@ -22,7 +22,7 @@ export default function LedgerPage() {
             const matchesSearch =
                 entry.description.toLowerCase().includes(search.toLowerCase()) ||
                 entry.category.toLowerCase().includes(search.toLowerCase()) ||
-                entry.reference.toLowerCase().includes(search.toLowerCase());
+                (entry.reference || '').toLowerCase().includes(search.toLowerCase());
             const matchesType = typeFilter === 'all' || entry.type === typeFilter;
             return matchesSearch && matchesType;
         })
@@ -48,21 +48,18 @@ export default function LedgerPage() {
         setShowAdd(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!form.category || !form.amount || !form.description) return;
-        dispatch({
-            type: 'ADD_LEDGER_ENTRY',
-            payload: {
-                ...form,
-                amount: Number(form.amount),
-            },
+        await addLedgerEntry({
+            ...form,
+            amount: Number(form.amount),
         });
         setShowAdd(false);
     };
 
-    const handleDelete = (id) => {
+    const handleDelete = async (id) => {
         if (window.confirm('Are you sure you want to delete this entry?')) {
-            dispatch({ type: 'DELETE_LEDGER_ENTRY', payload: id });
+            await deleteLedgerEntry(id);
         }
     };
 

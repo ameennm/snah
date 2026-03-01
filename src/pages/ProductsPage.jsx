@@ -4,7 +4,7 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2 } from 'react-icons/fi';
 
 export default function ProductsPage() {
-    const { products, dispatch, hasPermission } = useApp();
+    const { products, hasPermission, addProduct, updateProduct, deleteProduct } = useApp();
     const [search, setSearch] = useState('');
     const [showAdd, setShowAdd] = useState(false);
     const [editProduct, setEditProduct] = useState(null);
@@ -36,7 +36,7 @@ export default function ProductsPage() {
         setEditProduct(product);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!form.name || !form.purchasePrice || !form.sellingPrice) return;
         const data = {
             name: form.name,
@@ -46,18 +46,18 @@ export default function ProductsPage() {
             stock: Number(form.stock) || 0,
         };
         if (editProduct) {
-            dispatch({ type: 'UPDATE_PRODUCT', payload: { ...data, id: editProduct.id } });
+            await updateProduct({ ...data, id: editProduct.id });
             setEditProduct(null);
         } else {
-            dispatch({ type: 'ADD_PRODUCT', payload: data });
+            await addProduct(data);
             setShowAdd(false);
         }
         setForm({ name: '', purchasePrice: '', sellingPrice: '', gst: '', stock: '' });
     };
 
-    const handleDelete = (id) => {
+    const handleDelete = async (id) => {
         if (window.confirm('Are you sure you want to delete this product?')) {
-            dispatch({ type: 'DELETE_PRODUCT', payload: id });
+            await deleteProduct(id);
         }
     };
 

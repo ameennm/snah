@@ -1,0 +1,76 @@
+-- ============================================
+-- SNAH Inventory Management - Database Schema
+-- ============================================
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  name TEXT NOT NULL,
+  email TEXT,
+  role TEXT NOT NULL CHECK(role IN ('super_admin', 'employee_orders', 'employee_tracking')),
+  role_label TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Customers table
+CREATE TABLE IF NOT EXISTS customers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  address TEXT DEFAULT '',
+  area TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Products table
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  purchase_price REAL NOT NULL DEFAULT 0,
+  selling_price REAL NOT NULL DEFAULT 0,
+  gst REAL NOT NULL DEFAULT 0,
+  stock INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Orders table
+CREATE TABLE IF NOT EXISTS orders (
+  id TEXT PRIMARY KEY,
+  customer_id INTEGER NOT NULL,
+  subtotal REAL NOT NULL DEFAULT 0,
+  gst_amount REAL NOT NULL DEFAULT 0,
+  total REAL NOT NULL DEFAULT 0,
+  payment_status TEXT NOT NULL DEFAULT 'not_paid' CHECK(payment_status IN ('paid', 'not_paid', 'partial')),
+  tracking_id TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'shipped', 'delivered')),
+  created_at TEXT DEFAULT (datetime('now')),
+  created_by INTEGER,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- Order Items table
+CREATE TABLE IF NOT EXISTS order_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id TEXT NOT NULL,
+  product_id INTEGER NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  price REAL NOT NULL DEFAULT 0,
+  gst REAL NOT NULL DEFAULT 0,
+  FOREIGN KEY (order_id) REFERENCES orders(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+-- Ledger table
+CREATE TABLE IF NOT EXISTS ledger (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+  category TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  amount REAL NOT NULL DEFAULT 0,
+  date TEXT NOT NULL,
+  reference TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+);

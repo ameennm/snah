@@ -4,7 +4,7 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus } from 'react-icons/fi';
 
 export default function OrdersPage() {
-    const { orders, customers, products, dispatch, hasPermission, getCustomerById, getProductById, user } = useApp();
+    const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomer, addOrder, updateOrder } = useApp();
     const [search, setSearch] = useState('');
     const [showCreate, setShowCreate] = useState(false);
     const [viewOrder, setViewOrder] = useState(null);
@@ -78,7 +78,7 @@ export default function OrdersPage() {
         setPaymentStatus('not_paid');
     };
 
-    const handleCreateOrder = () => {
+    const handleCreateOrder = async () => {
         const validItems = orderItems.filter((i) => i.productId && i.quantity > 0);
         if (!customerName || !customerPhone || validItems.length === 0) return;
 
@@ -87,18 +87,13 @@ export default function OrdersPage() {
         if (matchedCustomer) {
             customerId = matchedCustomer.id;
         } else {
-            // Create new customer via dispatch, compute the ID
-            const newId = Math.max(0, ...customers.map((c) => c.id)) + 1;
-            dispatch({
-                type: 'ADD_CUSTOMER',
-                payload: {
-                    name: customerName,
-                    phone: customerPhone.replace(/[^0-9]/g, ''),
-                    address: customerAddress,
-                    area: customerArea,
-                },
+            const newCustomer = await addCustomer({
+                name: customerName,
+                phone: customerPhone.replace(/[^0-9]/g, ''),
+                address: customerAddress,
+                area: customerArea,
             });
-            customerId = newId;
+            customerId = newCustomer.id;
         }
 
         const items = validItems.map((i) => {
@@ -113,35 +108,28 @@ export default function OrdersPage() {
 
         const { subtotal, gstTotal, total } = calculateOrderTotal();
 
-        dispatch({
-            type: 'ADD_ORDER',
-            payload: {
-                customerId,
-                items,
-                subtotal,
-                gstAmount: gstTotal,
-                total,
-                paymentStatus,
-                trackingId: '',
-                status: 'pending',
-                createdAt: new Date().toISOString(),
-                createdBy: user.id,
-            },
+        await addOrder({
+            customerId,
+            items,
+            subtotal,
+            gstAmount: gstTotal,
+            total,
+            paymentStatus,
+            createdBy: user.id,
         });
 
         resetForm();
     };
 
-    const handleStatusChange = (orderId, newStatus) => {
-        dispatch({ type: 'UPDATE_ORDER', payload: { id: orderId, status: newStatus } });
-        // Also update viewOrder if it's open
+    const handleStatusChange = async (orderId, newStatus) => {
+        await updateOrder(orderId, { status: newStatus });
         if (viewOrder && viewOrder.id === orderId) {
             setViewOrder({ ...viewOrder, status: newStatus });
         }
     };
 
-    const handlePaymentChange = (orderId, newPayment) => {
-        dispatch({ type: 'UPDATE_ORDER', payload: { id: orderId, paymentStatus: newPayment } });
+    const handlePaymentChange = async (orderId, newPayment) => {
+        await updateOrder(orderId, { paymentStatus: newPayment });
         if (viewOrder && viewOrder.id === orderId) {
             setViewOrder({ ...viewOrder, paymentStatus: newPayment });
         }
