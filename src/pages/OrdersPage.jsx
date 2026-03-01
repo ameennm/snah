@@ -132,6 +132,21 @@ export default function OrdersPage() {
         resetForm();
     };
 
+    const handleStatusChange = (orderId, newStatus) => {
+        dispatch({ type: 'UPDATE_ORDER', payload: { id: orderId, status: newStatus } });
+        // Also update viewOrder if it's open
+        if (viewOrder && viewOrder.id === orderId) {
+            setViewOrder({ ...viewOrder, status: newStatus });
+        }
+    };
+
+    const handlePaymentChange = (orderId, newPayment) => {
+        dispatch({ type: 'UPDATE_ORDER', payload: { id: orderId, paymentStatus: newPayment } });
+        if (viewOrder && viewOrder.id === orderId) {
+            setViewOrder({ ...viewOrder, paymentStatus: newPayment });
+        }
+    };
+
     const formatCurrency = (val) =>
         '₹' + Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -212,8 +227,30 @@ export default function OrdersPage() {
                                         <td>{formatCurrency(order.subtotal)}</td>
                                         <td>{formatCurrency(order.gstAmount)}</td>
                                         <td className="font-bold">{formatCurrency(order.total)}</td>
-                                        <td>{getPaymentBadge(order.paymentStatus)}</td>
-                                        <td>{getStatusBadge(order.status)}</td>
+                                        <td>
+                                            <select
+                                                value={order.paymentStatus}
+                                                onChange={(e) => handlePaymentChange(order.id, e.target.value)}
+                                                className={`badge ${order.paymentStatus === 'paid' ? 'badge-paid' : order.paymentStatus === 'partial' ? 'badge-partial' : 'badge-unpaid'}`}
+                                                style={{ cursor: 'pointer', padding: '4px 8px', border: 'none', fontSize: '0.75rem', fontWeight: 600, borderRadius: '9999px', appearance: 'none', WebkitAppearance: 'none', backgroundImage: 'none', textAlign: 'center', minWidth: '80px' }}
+                                            >
+                                                <option value="paid">Paid</option>
+                                                <option value="not_paid">Not Paid</option>
+                                                <option value="partial">Partial</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select
+                                                value={order.status}
+                                                onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                                                className={`badge ${order.status === 'delivered' ? 'badge-delivered' : order.status === 'shipped' ? 'badge-shipped' : 'badge-pending'}`}
+                                                style={{ cursor: 'pointer', padding: '4px 8px', border: 'none', fontSize: '0.75rem', fontWeight: 600, borderRadius: '9999px', appearance: 'none', WebkitAppearance: 'none', backgroundImage: 'none', textAlign: 'center', minWidth: '80px' }}
+                                            >
+                                                <option value="pending">Pending</option>
+                                                <option value="shipped">Shipped</option>
+                                                <option value="delivered">Delivered</option>
+                                            </select>
+                                        </td>
                                         <td>
                                             {new Date(order.createdAt).toLocaleDateString('en-IN', {
                                                 day: '2-digit',
@@ -472,13 +509,29 @@ export default function OrdersPage() {
                             <span className="text-muted">Date</span>
                             <span>{new Date(viewOrder.createdAt).toLocaleDateString('en-IN')}</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                             <span className="text-muted">Payment</span>
-                            {getPaymentBadge(viewOrder.paymentStatus)}
+                            <select
+                                value={viewOrder.paymentStatus}
+                                onChange={(e) => handlePaymentChange(viewOrder.id, e.target.value)}
+                                style={{ maxWidth: '140px', padding: '6px 10px', fontSize: '0.8125rem' }}
+                            >
+                                <option value="paid">Paid</option>
+                                <option value="not_paid">Not Paid</option>
+                                <option value="partial">Partial</option>
+                            </select>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                             <span className="text-muted">Status</span>
-                            {getStatusBadge(viewOrder.status)}
+                            <select
+                                value={viewOrder.status}
+                                onChange={(e) => handleStatusChange(viewOrder.id, e.target.value)}
+                                style={{ maxWidth: '140px', padding: '6px 10px', fontSize: '0.8125rem' }}
+                            >
+                                <option value="pending">Pending</option>
+                                <option value="shipped">Shipped</option>
+                                <option value="delivered">Delivered</option>
+                            </select>
                         </div>
                         {viewOrder.trackingId && (
                             <div className="flex justify-between">
