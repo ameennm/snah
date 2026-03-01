@@ -28,21 +28,21 @@ export default function CustomersPage() {
         setEditCustomer(customer);
     };
 
-    const handleSave = async () => {
+    const handleSave = () => {
         if (!form.name || !form.phone) return;
         if (editCustomer) {
-            await updateCustomer({ ...editCustomer, ...form });
+            updateCustomer({ ...editCustomer, ...form });
             setEditCustomer(null);
         } else {
-            await addCustomer(form);
+            addCustomer(form);
             setShowAdd(false);
         }
         setForm({ name: '', phone: '', address: '', area: '' });
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = (id) => {
         if (window.confirm('Are you sure you want to delete this customer?')) {
-            await deleteCustomer(id);
+            deleteCustomer(id);
         }
     };
 

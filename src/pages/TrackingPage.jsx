@@ -27,9 +27,9 @@ export default function TrackingPage() {
         setTrackingInput(order.trackingId || '');
     };
 
-    const saveTracking = async (orderId) => {
+    const saveTracking = (orderId) => {
         if (!trackingInput.trim()) return;
-        await updateOrder(orderId, { trackingId: trackingInput.trim(), status: 'shipped' });
+        updateOrder(orderId, { trackingId: trackingInput.trim(), status: 'shipped' });
         setEditingId(null);
         setTrackingInput('');
     };
@@ -56,8 +56,9 @@ Thank you.`;
             pending: 'badge-pending',
             shipped: 'badge-shipped',
             delivered: 'badge-delivered',
+            returned: 'badge-returned',
         };
-        const labels = { pending: 'Pending', shipped: 'Shipped', delivered: 'Delivered' };
+        const labels = { pending: 'Pending', shipped: 'Shipped', delivered: 'Delivered', returned: 'Returned' };
         return <span className={`badge ${map[status]}`}>{labels[status]}</span>;
     };
 
@@ -88,6 +89,7 @@ Thank you.`;
                             <option value="pending">Pending</option>
                             <option value="shipped">Shipped</option>
                             <option value="delivered">Delivered</option>
+                            <option value="returned">Returned</option>
                         </select>
                     </div>
                 </div>

@@ -36,7 +36,7 @@ export default function ProductsPage() {
         setEditProduct(product);
     };
 
-    const handleSave = async () => {
+    const handleSave = () => {
         if (!form.name || !form.purchasePrice || !form.sellingPrice) return;
         const data = {
             name: form.name,
@@ -46,18 +46,18 @@ export default function ProductsPage() {
             stock: Number(form.stock) || 0,
         };
         if (editProduct) {
-            await updateProduct({ ...data, id: editProduct.id });
+            updateProduct({ ...data, id: editProduct.id });
             setEditProduct(null);
         } else {
-            await addProduct(data);
+            addProduct(data);
             setShowAdd(false);
         }
         setForm({ name: '', purchasePrice: '', sellingPrice: '', gst: '', stock: '' });
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = (id) => {
         if (window.confirm('Are you sure you want to delete this product?')) {
-            await deleteProduct(id);
+            deleteProduct(id);
         }
     };
 

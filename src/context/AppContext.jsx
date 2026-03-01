@@ -15,6 +15,10 @@ const initialState = {
     loading: true,
 };
 
+// Counter for temporary IDs (negative to never collide with DB IDs)
+let tempIdCounter = -1;
+function nextTempId() { return tempIdCounter--; }
+
 function appReducer(state, action) {
     switch (action.type) {
         case 'LOGIN':
@@ -28,7 +32,7 @@ function appReducer(state, action) {
         case 'SET_LOADING':
             return { ...state, loading: action.payload };
 
-        // Data from API
+        // Bulk data from API
         case 'SET_CUSTOMERS':
             return { ...state, customers: action.payload };
         case 'SET_PRODUCTS':
@@ -38,25 +42,29 @@ function appReducer(state, action) {
         case 'SET_LEDGER':
             return { ...state, ledger: action.payload };
 
-        // Optimistic local updates (sync with API)
+        // Optimistic CRUD
         case 'ADD_CUSTOMER':
             return { ...state, customers: [...state.customers, action.payload] };
         case 'UPDATE_CUSTOMER':
-            return { ...state, customers: state.customers.map(c => c.id === action.payload.id ? action.payload : c) };
+            return { ...state, customers: state.customers.map(c => c.id === action.payload.id ? { ...c, ...action.payload } : c) };
         case 'DELETE_CUSTOMER':
             return { ...state, customers: state.customers.filter(c => c.id !== action.payload) };
+        case 'REPLACE_CUSTOMER':
+            return { ...state, customers: state.customers.map(c => c.id === action.payload.tempId ? { ...c, ...action.payload.real } : c) };
 
         case 'ADD_PRODUCT':
             return { ...state, products: [...state.products, action.payload] };
         case 'UPDATE_PRODUCT':
-            return { ...state, products: state.products.map(p => p.id === action.payload.id ? action.payload : p) };
+            return { ...state, products: state.products.map(p => p.id === action.payload.id ? { ...p, ...action.payload } : p) };
         case 'DELETE_PRODUCT':
             return { ...state, products: state.products.filter(p => p.id !== action.payload) };
+        case 'REPLACE_PRODUCT':
+            return { ...state, products: state.products.map(p => p.id === action.payload.tempId ? { ...p, ...action.payload.real } : p) };
 
         case 'ADD_ORDER': {
             const order = action.payload;
             const updatedProducts = state.products.map(p => {
-                const item = order.items.find(i => i.productId === p.id);
+                const item = order.items?.find(i => i.productId === p.id);
                 if (item) return { ...p, stock: p.stock - item.quantity };
                 return p;
             });
@@ -64,13 +72,37 @@ function appReducer(state, action) {
         }
         case 'UPDATE_ORDER':
             return { ...state, orders: state.orders.map(o => o.id === action.payload.id ? { ...o, ...action.payload } : o) };
-        case 'DELETE_ORDER':
-            return { ...state, orders: state.orders.filter(o => o.id !== action.payload) };
+        case 'DELETE_ORDER': {
+            const delOrder = state.orders.find(o => o.id === action.payload);
+            let restoredProducts = state.products;
+            if (delOrder && delOrder.status !== 'returned') {
+                restoredProducts = state.products.map(p => {
+                    const item = delOrder.items?.find(i => i.productId === p.id);
+                    if (item) return { ...p, stock: p.stock + item.quantity };
+                    return p;
+                });
+            }
+            return { ...state, orders: state.orders.filter(o => o.id !== action.payload), products: restoredProducts };
+        }
+        case 'REPLACE_ORDER':
+            return { ...state, orders: state.orders.map(o => o.id === action.payload.tempId ? { ...o, ...action.payload.real } : o) };
+        case 'RETURN_ORDER_STOCK': {
+            const retOrder = state.orders.find(o => o.id === action.payload);
+            if (!retOrder) return state;
+            const restored = state.products.map(p => {
+                const item = retOrder.items?.find(i => i.productId === p.id);
+                if (item) return { ...p, stock: p.stock + item.quantity };
+                return p;
+            });
+            return { ...state, products: restored };
+        }
 
         case 'ADD_LEDGER_ENTRY':
             return { ...state, ledger: [action.payload, ...state.ledger] };
         case 'DELETE_LEDGER_ENTRY':
             return { ...state, ledger: state.ledger.filter(l => l.id !== action.payload) };
+        case 'REPLACE_LEDGER':
+            return { ...state, ledger: state.ledger.map(l => l.id === action.payload.tempId ? { ...l, ...action.payload.real } : l) };
 
         default:
             return state;
@@ -84,14 +116,15 @@ async function api(endpoint, options = {}) {
         ...options,
         body: options.body ? JSON.stringify(options.body) : undefined,
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'API error');
+    return data;
 }
 
 export function AppProvider({ children }) {
     const [state, dispatch] = useReducer(appReducer, initialState);
     const dataLoaded = useRef(false);
 
-    // Load all data when user logs in
     useEffect(() => {
         if (state.user && !dataLoaded.current) {
             dataLoaded.current = true;
@@ -106,10 +139,7 @@ export function AppProvider({ children }) {
         dispatch({ type: 'SET_LOADING', payload: true });
         try {
             const [customers, products, orders, ledger] = await Promise.all([
-                api('/customers'),
-                api('/products'),
-                api('/orders'),
-                api('/ledger'),
+                api('/customers'), api('/products'), api('/orders'), api('/ledger'),
             ]);
             dispatch({ type: 'SET_CUSTOMERS', payload: customers });
             dispatch({ type: 'SET_PRODUCTS', payload: products });
@@ -124,10 +154,7 @@ export function AppProvider({ children }) {
     // ====== AUTH ======
     const login = useCallback(async (username, password) => {
         try {
-            const result = await api('/login', {
-                method: 'POST',
-                body: { username, password },
-            });
+            const result = await api('/login', { method: 'POST', body: { username, password } });
             if (result.success) {
                 dispatch({ type: 'LOGIN', payload: result.user });
                 return { success: true };
@@ -138,9 +165,7 @@ export function AppProvider({ children }) {
         }
     }, []);
 
-    const logout = useCallback(() => {
-        dispatch({ type: 'LOGOUT' });
-    }, []);
+    const logout = useCallback(() => dispatch({ type: 'LOGOUT' }), []);
 
     // ====== PERMISSIONS ======
     const hasPermission = useCallback(
@@ -151,72 +176,110 @@ export function AppProvider({ children }) {
         [state.user]
     );
 
-    // ====== CUSTOMERS ======
-    const addCustomer = useCallback(async (data) => {
-        const result = await api('/customers', { method: 'POST', body: data });
-        dispatch({ type: 'ADD_CUSTOMER', payload: result });
-        return result;
+    // ====== CUSTOMERS (Optimistic) ======
+    const addCustomer = useCallback((data) => {
+        const tempId = nextTempId();
+        const optimistic = { ...data, id: tempId, address: data.address || '', area: data.area || '' };
+        dispatch({ type: 'ADD_CUSTOMER', payload: optimistic });
+
+        // Sync in background
+        api('/customers', { method: 'POST', body: data })
+            .then(real => dispatch({ type: 'REPLACE_CUSTOMER', payload: { tempId, real } }))
+            .catch(() => dispatch({ type: 'DELETE_CUSTOMER', payload: tempId }));
+
+        return optimistic;
     }, []);
 
-    const updateCustomer = useCallback(async (data) => {
-        const result = await api(`/customers/${data.id}`, { method: 'PUT', body: data });
-        dispatch({ type: 'UPDATE_CUSTOMER', payload: result });
-        return result;
+    const updateCustomer = useCallback((data) => {
+        dispatch({ type: 'UPDATE_CUSTOMER', payload: data });
+        api(`/customers/${data.id}`, { method: 'PUT', body: data }).catch(console.error);
+        return data;
     }, []);
 
-    const deleteCustomer = useCallback(async (id) => {
-        await api(`/customers/${id}`, { method: 'DELETE' });
+    const deleteCustomer = useCallback((id) => {
         dispatch({ type: 'DELETE_CUSTOMER', payload: id });
+        api(`/customers/${id}`, { method: 'DELETE' }).catch(console.error);
     }, []);
 
-    // ====== PRODUCTS ======
-    const addProduct = useCallback(async (data) => {
-        const result = await api('/products', { method: 'POST', body: data });
-        dispatch({ type: 'ADD_PRODUCT', payload: result });
-        return result;
+    // ====== PRODUCTS (Optimistic) ======
+    const addProduct = useCallback((data) => {
+        const tempId = nextTempId();
+        const optimistic = { ...data, id: tempId };
+        dispatch({ type: 'ADD_PRODUCT', payload: optimistic });
+
+        api('/products', { method: 'POST', body: data })
+            .then(real => dispatch({ type: 'REPLACE_PRODUCT', payload: { tempId, real } }))
+            .catch(() => dispatch({ type: 'DELETE_PRODUCT', payload: tempId }));
+
+        return optimistic;
     }, []);
 
-    const updateProduct = useCallback(async (data) => {
-        const result = await api(`/products/${data.id}`, { method: 'PUT', body: data });
-        dispatch({ type: 'UPDATE_PRODUCT', payload: result });
-        return result;
+    const updateProduct = useCallback((data) => {
+        dispatch({ type: 'UPDATE_PRODUCT', payload: data });
+        api(`/products/${data.id}`, { method: 'PUT', body: data }).catch(console.error);
+        return data;
     }, []);
 
-    const deleteProduct = useCallback(async (id) => {
-        await api(`/products/${id}`, { method: 'DELETE' });
+    const deleteProduct = useCallback((id) => {
         dispatch({ type: 'DELETE_PRODUCT', payload: id });
+        api(`/products/${id}`, { method: 'DELETE' }).catch(console.error);
     }, []);
 
-    // ====== ORDERS ======
-    const addOrder = useCallback(async (data) => {
-        const result = await api('/orders', { method: 'POST', body: data });
-        dispatch({ type: 'ADD_ORDER', payload: result });
-        return result;
+    // ====== ORDERS (Optimistic) ======
+    const addOrder = useCallback((data) => {
+        const tempId = 'ORD-TMP-' + Date.now();
+        const optimistic = {
+            id: tempId, customerId: data.customerId, items: data.items,
+            subtotal: data.subtotal, gstAmount: data.gstAmount, total: data.total,
+            paidAmount: data.paidAmount || 0, paymentStatus: data.paymentStatus,
+            status: 'pending', trackingId: '', createdAt: new Date().toISOString(),
+            createdBy: data.createdBy,
+        };
+        dispatch({ type: 'ADD_ORDER', payload: optimistic });
+
+        api('/orders', { method: 'POST', body: data })
+            .then(real => dispatch({ type: 'REPLACE_ORDER', payload: { tempId, real } }))
+            .catch(() => {
+                dispatch({ type: 'DELETE_ORDER', payload: tempId });
+                alert('Failed to save order. Please try again.');
+            });
+
+        return optimistic;
     }, []);
 
-    const updateOrder = useCallback(async (id, data) => {
-        await api(`/orders/${id}`, { method: 'PUT', body: data });
+    const updateOrder = useCallback((id, data) => {
         dispatch({ type: 'UPDATE_ORDER', payload: { id, ...data } });
+
+        // If returning, also restore stock optimistically
+        if (data.status === 'returned') {
+            dispatch({ type: 'RETURN_ORDER_STOCK', payload: id });
+            data.restoreStock = true;
+        }
+
+        api(`/orders/${id}`, { method: 'PUT', body: data }).catch(console.error);
     }, []);
 
-    const deleteOrder = useCallback(async (id) => {
-        await api(`/orders/${id}`, { method: 'DELETE' });
+    const deleteOrder = useCallback((id) => {
         dispatch({ type: 'DELETE_ORDER', payload: id });
-        // Refresh products to get updated stock
-        const products = await api('/products');
-        dispatch({ type: 'SET_PRODUCTS', payload: products });
+        api(`/orders/${id}`, { method: 'DELETE' }).catch(console.error);
     }, []);
 
-    // ====== LEDGER ======
-    const addLedgerEntry = useCallback(async (data) => {
-        const result = await api('/ledger', { method: 'POST', body: data });
-        dispatch({ type: 'ADD_LEDGER_ENTRY', payload: result });
-        return result;
+    // ====== LEDGER (Optimistic) ======
+    const addLedgerEntry = useCallback((data) => {
+        const tempId = nextTempId();
+        const optimistic = { ...data, id: tempId, reference: data.reference || '' };
+        dispatch({ type: 'ADD_LEDGER_ENTRY', payload: optimistic });
+
+        api('/ledger', { method: 'POST', body: data })
+            .then(real => dispatch({ type: 'REPLACE_LEDGER', payload: { tempId, real } }))
+            .catch(() => dispatch({ type: 'DELETE_LEDGER_ENTRY', payload: tempId }));
+
+        return optimistic;
     }, []);
 
-    const deleteLedgerEntry = useCallback(async (id) => {
-        await api(`/ledger/${id}`, { method: 'DELETE' });
+    const deleteLedgerEntry = useCallback((id) => {
         dispatch({ type: 'DELETE_LEDGER_ENTRY', payload: id });
+        api(`/ledger/${id}`, { method: 'DELETE' }).catch(console.error);
     }, []);
 
     // ====== HELPERS ======

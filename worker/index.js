@@ -110,8 +110,9 @@ export default {
                 const { results: allItems } = await env.DB.prepare('SELECT * FROM order_items').all();
                 const mapped = orders.map(o => ({
                     id: o.id, customerId: o.customer_id, subtotal: o.subtotal,
-                    gstAmount: o.gst_amount, total: o.total, paymentStatus: o.payment_status,
-                    trackingId: o.tracking_id, status: o.status, createdAt: o.created_at, createdBy: o.created_by,
+                    gstAmount: o.gst_amount, total: o.total, paidAmount: o.paid_amount || 0,
+                    paymentStatus: o.payment_status, trackingId: o.tracking_id,
+                    status: o.status, createdAt: o.created_at, createdBy: o.created_by,
                     items: allItems.filter(i => i.order_id === o.id).map(i => ({
                         productId: i.product_id, quantity: i.quantity, price: i.price, gst: i.gst,
                     })),
@@ -120,9 +121,8 @@ export default {
             }
 
             if (path === '/api/orders' && method === 'POST') {
-                const { customerId, items, subtotal, gstAmount, total, paymentStatus, createdBy } = await request.json();
+                const { customerId, items, subtotal, gstAmount, total, paymentStatus, paidAmount, createdBy } = await request.json();
 
-                // Generate unique order ID
                 const maxResult = await env.DB.prepare("SELECT id FROM orders ORDER BY id DESC LIMIT 1").first();
                 let nextNum = 1;
                 if (maxResult && maxResult.id) {
@@ -131,10 +131,11 @@ export default {
                 }
                 const orderId = `ORD-${String(nextNum).padStart(3, '0')}`;
                 const createdAt = new Date().toISOString();
+                const finalPaidAmount = paymentStatus === 'paid' ? total : (paidAmount || 0);
 
                 await env.DB.prepare(
-                    'INSERT INTO orders (id, customer_id, subtotal, gst_amount, total, payment_status, tracking_id, status, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                ).bind(orderId, customerId, subtotal, gstAmount, total, paymentStatus, '', 'pending', createdAt, createdBy).run();
+                    'INSERT INTO orders (id, customer_id, subtotal, gst_amount, total, paid_amount, payment_status, tracking_id, status, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                ).bind(orderId, customerId, subtotal, gstAmount, total, finalPaidAmount, paymentStatus, '', 'pending', createdAt, createdBy).run();
 
                 for (const item of items) {
                     await env.DB.prepare(
@@ -145,7 +146,7 @@ export default {
                     ).bind(item.quantity, item.productId).run();
                 }
 
-                return json({ id: orderId, customerId, items, subtotal, gstAmount, total, paymentStatus, status: 'pending', createdAt, trackingId: '' }, 201);
+                return json({ id: orderId, customerId, items, subtotal, gstAmount, total, paidAmount: finalPaidAmount, paymentStatus, status: 'pending', createdAt, trackingId: '' }, 201);
             }
 
             if (path.startsWith('/api/orders/') && method === 'PUT') {
@@ -153,9 +154,22 @@ export default {
                 const body = await request.json();
                 const updates = [];
                 const values = [];
+
                 if (body.status !== undefined) { updates.push('status = ?'); values.push(body.status); }
                 if (body.paymentStatus !== undefined) { updates.push('payment_status = ?'); values.push(body.paymentStatus); }
+                if (body.paidAmount !== undefined) { updates.push('paid_amount = ?'); values.push(body.paidAmount); }
                 if (body.trackingId !== undefined) { updates.push('tracking_id = ?'); values.push(body.trackingId); }
+
+                // If status is "returned", restore stock
+                if (body.status === 'returned' && body.restoreStock) {
+                    const { results: orderItems } = await env.DB.prepare(
+                        'SELECT product_id, quantity FROM order_items WHERE order_id = ?'
+                    ).bind(id).all();
+                    for (const item of orderItems) {
+                        await env.DB.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').bind(item.quantity, item.product_id).run();
+                    }
+                }
+
                 if (updates.length > 0) {
                     values.push(id);
                     await env.DB.prepare(`UPDATE orders SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
@@ -187,7 +201,7 @@ export default {
                 const result = await env.DB.prepare(
                     'INSERT INTO ledger (type, category, description, amount, date, reference) VALUES (?, ?, ?, ?, ?, ?)'
                 ).bind(type, category, description || '', amount, date, reference || '').run();
-                return json({ id: result.meta.last_row_id, type, category, description, amount, date, reference }, 201);
+                return json({ id: result.meta.last_row_id, type, category, description, amount, date, reference: reference || '' }, 201);
             }
 
             if (path.startsWith('/api/ledger/') && method === 'DELETE') {

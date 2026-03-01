@@ -28,13 +28,14 @@ export default function LedgerPage() {
         })
         .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    const totalIncome = ledger
+    const totalIncome = filtered
         .filter((e) => e.type === 'income')
         .reduce((sum, e) => sum + e.amount, 0);
-    const totalExpense = ledger
+    const totalExpense = filtered
         .filter((e) => e.type === 'expense')
         .reduce((sum, e) => sum + e.amount, 0);
     const netBalance = totalIncome - totalExpense;
+    const isFiltered = search || typeFilter !== 'all';
 
     const openAdd = (type = 'expense') => {
         setForm({
@@ -48,18 +49,18 @@ export default function LedgerPage() {
         setShowAdd(true);
     };
 
-    const handleSave = async () => {
+    const handleSave = () => {
         if (!form.category || !form.amount || !form.description) return;
-        await addLedgerEntry({
+        addLedgerEntry({
             ...form,
             amount: Number(form.amount),
         });
         setShowAdd(false);
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = (id) => {
         if (window.confirm('Are you sure you want to delete this entry?')) {
-            await deleteLedgerEntry(id);
+            deleteLedgerEntry(id);
         }
     };
 
@@ -91,11 +92,16 @@ export default function LedgerPage() {
     return (
         <>
             {/* Summary Cards */}
+            {isFiltered && (
+                <div style={{ background: 'var(--primary-50)', border: '1px solid var(--primary-200)', borderRadius: 'var(--radius-md)', padding: '8px 14px', marginBottom: '12px', fontSize: '0.8125rem', color: 'var(--primary-700)', fontWeight: 600 }}>
+                    📊 Showing totals for filtered results ({filtered.length} entries)
+                </div>
+            )}
             <div className="profit-summary">
                 <div className="profit-card sales">
                     <h3>
                         <FiArrowDownLeft style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                        Total Income
+                        {isFiltered ? 'Filtered Income' : 'Total Income'}
                     </h3>
                     <div className="amount" style={{ color: 'var(--success-600)' }}>
                         {formatCurrency(totalIncome)}
@@ -104,14 +110,14 @@ export default function LedgerPage() {
                 <div className="profit-card cost">
                     <h3>
                         <FiArrowUpRight style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                        Total Expenses
+                        {isFiltered ? 'Filtered Expenses' : 'Total Expenses'}
                     </h3>
                     <div className="amount" style={{ color: 'var(--danger-600)' }}>
                         {formatCurrency(totalExpense)}
                     </div>
                 </div>
                 <div className="profit-card profit">
-                    <h3>Net Balance</h3>
+                    <h3>{isFiltered ? 'Filtered Balance' : 'Net Balance'}</h3>
                     <div
                         className="amount"
                         style={{ color: netBalance >= 0 ? 'var(--success-600)' : 'var(--danger-600)' }}

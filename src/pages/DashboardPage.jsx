@@ -63,10 +63,12 @@ export default function DashboardPage() {
         [orders, from, to]
     );
 
-    // Calculations
+    // Calculations - exclude returned orders
+    const activeOrders = filteredOrders.filter(o => o.status !== 'returned');
+    const returnedOrders = filteredOrders.filter(o => o.status === 'returned');
     const totalOrders = filteredOrders.length;
-    const totalSales = filteredOrders.reduce((sum, o) => sum + o.total, 0);
-    const totalCost = filteredOrders.reduce((sum, o) => {
+    const totalSales = activeOrders.reduce((sum, o) => sum + o.total, 0);
+    const totalCost = activeOrders.reduce((sum, o) => {
         return sum + o.items.reduce((itemSum, item) => {
             const product = getProductById(item.productId);
             return itemSum + (product ? product.purchasePrice * item.quantity : 0);
@@ -79,7 +81,7 @@ export default function DashboardPage() {
     // Product performance analysis
     const productPerformance = useMemo(() => {
         const map = {};
-        filteredOrders.forEach((o) => {
+        activeOrders.forEach((o) => {
             o.items.forEach((item) => {
                 const product = getProductById(item.productId);
                 if (!product) return;
@@ -112,7 +114,7 @@ export default function DashboardPage() {
             topRevenue: [...list].sort((a, b) => b.revenue - a.revenue),
             lowPerformers: [...list].sort((a, b) => a.unitsSold - b.unitsSold),
         };
-    }, [filteredOrders, getProductById]);
+    }, [filteredOrders, activeOrders, getProductById]);
 
     // Recent orders
     const recentOrders = [...filteredOrders]
@@ -121,7 +123,7 @@ export default function DashboardPage() {
 
     // Monthly summary from orders
     const monthlySales = {};
-    filteredOrders.forEach((o) => {
+    activeOrders.forEach((o) => {
         const month = new Date(o.createdAt).toLocaleDateString('en-IN', {
             month: 'short',
             year: 'numeric',
@@ -203,6 +205,11 @@ export default function DashboardPage() {
                     <div className="stat-info">
                         <div className="stat-label">Total Orders</div>
                         <div className="stat-value">{totalOrders}</div>
+                        {returnedOrders.length > 0 && (
+                            <div className="stat-change down">
+                                🔄 {returnedOrders.length} returned
+                            </div>
+                        )}
                     </div>
                 </div>
 

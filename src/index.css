@@ -632,6 +632,10 @@ table {
   flex-wrap: wrap;
 }
 
+.card-header>h2 {
+  flex-shrink: 0;
+}
+
 .card-header h2 {
   font-size: 1.0625rem;
   font-weight: 700;
@@ -942,6 +946,12 @@ table {
   border: 1px solid var(--success-100);
 }
 
+.badge-returned {
+  background: #fff1f0;
+  color: #cf1322;
+  border: 1px solid #ffa39e;
+}
+
 /* ============================================
    MODAL
    ============================================ */
@@ -1061,8 +1071,8 @@ table {
 .filters-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
 }
 
 /* ============================================
@@ -1228,6 +1238,12 @@ table {
   border-color: var(--success-100);
 }
 
+.status-returned {
+  background: #fff1f0;
+  color: #cf1322;
+  border-color: #ffa39e;
+}
+
 /* ============================================
    RESPONSIVE
    ============================================ */
@@ -1391,6 +1407,7 @@ table {
 
   .filters-row {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .search-bar {
@@ -1399,7 +1416,7 @@ table {
   }
 
   .btn {
-    padding: 10px 14px;
+    padding: 8px 12px;
     font-size: 0.8125rem;
   }
 

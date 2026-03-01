@@ -52,10 +52,13 @@ export default function ReportsPage() {
         [orders, from, to]
     );
 
+    // Exclude returned orders from calculations
+    const activeOrders = filteredOrders.filter(o => o.status !== 'returned');
+
     // Overall calculations
-    const totalSales = filteredOrders.reduce((sum, o) => sum + o.total, 0);
-    const totalGst = filteredOrders.reduce((sum, o) => sum + o.gstAmount, 0);
-    const totalCost = filteredOrders.reduce((sum, o) => {
+    const totalSales = activeOrders.reduce((sum, o) => sum + o.total, 0);
+    const totalGst = activeOrders.reduce((sum, o) => sum + o.gstAmount, 0);
+    const totalCost = activeOrders.reduce((sum, o) => {
         return sum + o.items.reduce((itemSum, item) => {
             const product = getProductById(item.productId);
             return itemSum + (product ? product.purchasePrice * item.quantity : 0);
@@ -65,7 +68,7 @@ export default function ReportsPage() {
 
     // Product-wise profit
     const productProfitMap = {};
-    filteredOrders.forEach((o) => {
+    activeOrders.forEach((o) => {
         o.items.forEach((item) => {
             const product = getProductById(item.productId);
             if (!product) return;
@@ -111,7 +114,7 @@ export default function ReportsPage() {
 
     // Monthly breakdown
     const monthlyData = {};
-    filteredOrders.forEach((o) => {
+    activeOrders.forEach((o) => {
         const month = new Date(o.createdAt).toLocaleDateString('en-IN', {
             month: 'long',
             year: 'numeric',
@@ -132,9 +135,9 @@ export default function ReportsPage() {
 
     // Payment status breakdown
     const paymentBreakdown = {
-        paid: filteredOrders.filter((o) => o.paymentStatus === 'paid'),
-        not_paid: filteredOrders.filter((o) => o.paymentStatus === 'not_paid'),
-        partial: filteredOrders.filter((o) => o.paymentStatus === 'partial'),
+        paid: activeOrders.filter((o) => o.paymentStatus === 'paid'),
+        not_paid: activeOrders.filter((o) => o.paymentStatus === 'not_paid'),
+        partial: activeOrders.filter((o) => o.paymentStatus === 'partial'),
     };
 
     const formatCurrency = (val) =>
