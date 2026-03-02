@@ -112,8 +112,8 @@ Thank you.`;
                                 const isEditing = editingId === order.id;
                                 return (
                                     <tr key={order.id}>
-                                        <td className="font-mono font-bold">{order.id}</td>
-                                        <td>
+                                        <td data-label="Order ID" className="font-mono font-bold">{order.id}</td>
+                                        <td data-label="Customer">
                                             <div>
                                                 <div className="font-bold">{customer?.name || 'Unknown'}</div>
                                                 <div className="text-muted" style={{ fontSize: '0.75rem' }}>
@@ -121,15 +121,15 @@ Thank you.`;
                                                 </div>
                                             </div>
                                         </td>
-                                        <td>
+                                        <td data-label="Products">
                                             {order.items.map((item) => {
                                                 const p = getProductById(item.productId);
                                                 return p ? `${p.name} x${item.quantity}` : '';
                                             }).filter(Boolean).join(', ')}
                                         </td>
-                                        <td className="font-bold">{formatCurrency(order.total)}</td>
-                                        <td>{getStatusBadge(order.status)}</td>
-                                        <td>
+                                        <td data-label="Total" className="font-bold">{formatCurrency(order.total)}</td>
+                                        <td data-label="Status">{getStatusBadge(order.status)}</td>
+                                        <td data-label="Tracking">
                                             {isEditing && hasPermission('addTracking') ? (
                                                 <div className="tracking-row">
                                                     <input
@@ -170,7 +170,7 @@ Thank you.`;
                                                 <span className="text-muted">—</span>
                                             )}
                                         </td>
-                                        <td>
+                                        <td data-label="WhatsApp">
                                             {order.trackingId && hasPermission('sendWhatsApp') ? (
                                                 <button
                                                     className="whatsapp-btn"

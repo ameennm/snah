@@ -136,13 +136,13 @@ export default function CustomersPage() {
                         <tbody>
                             {filtered.map((c, i) => (
                                 <tr key={c.id}>
-                                    <td>{i + 1}</td>
-                                    <td className="font-bold">{c.name}</td>
-                                    <td className="font-mono">{c.phone}</td>
-                                    <td>{c.address}</td>
-                                    <td>{c.area}</td>
-                                    <td>{orders.filter((o) => o.customerId === c.id).length}</td>
-                                    <td>
+                                    <td data-label="#">{i + 1}</td>
+                                    <td data-label="Name" className="font-bold">{c.name}</td>
+                                    <td data-label="Phone" className="font-mono">{c.phone}</td>
+                                    <td data-label="Address">{c.address}</td>
+                                    <td data-label="Area">{c.area}</td>
+                                    <td data-label="Orders">{orders.filter((o) => o.customerId === c.id).length}</td>
+                                    <td data-label="Actions">
                                         <div className="flex gap-8">
                                             <button
                                                 className="btn btn-secondary btn-sm btn-icon"

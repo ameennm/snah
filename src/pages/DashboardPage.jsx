@@ -163,17 +163,37 @@ export default function DashboardPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, fontSize: '0.875rem' }}>
                         <FiCalendar /> Period:
                     </div>
-                    {['all', 'today', 'week', 'month', 'custom'].map((p) => (
-                        <button
-                            key={p}
-                            className={`btn btn-sm ${period === p ? 'btn-primary' : 'btn-secondary'}`}
-                            onClick={() => setPeriod(p)}
+                    {/* Desktop View Buttons */}
+                    <div className="desktop-period-selector" style={{ display: 'flex', gap: '8px' }}>
+                        {['all', 'today', 'week', 'month', 'custom'].map((p) => (
+                            <button
+                                key={p}
+                                className={`btn btn-sm ${period === p ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setPeriod(p)}
+                            >
+                                {periodLabel[p]}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Mobile View Dropdown */}
+                    <div className="mobile-period-selector">
+                        <select
+                            className="status-select"
+                            value={period}
+                            onChange={(e) => setPeriod(e.target.value)}
+                            style={{ width: '100%', padding: '10px 16px', fontSize: '1rem', background: 'var(--bg-surface)' }}
                         >
-                            {periodLabel[p]}
-                        </button>
-                    ))}
+                            {['all', 'today', 'week', 'month', 'custom'].map((p) => (
+                                <option key={p} value={p}>
+                                    {periodLabel[p]}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
                     {period === 'custom' && (
-                        <>
+                        <div className="custom-date-inputs">
                             <div className="form-group" style={{ margin: 0, maxWidth: '160px' }}>
                                 <input
                                     type="date"
@@ -191,7 +211,7 @@ export default function DashboardPage() {
                                     style={{ padding: '6px 10px', fontSize: '0.8125rem' }}
                                 />
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>

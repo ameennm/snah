@@ -153,23 +153,42 @@ export default function ReportsPage() {
 
     return (
         <>
-            {/* Date Range Filter */}
             <div className="card" style={{ marginBottom: '20px', padding: '16px 20px' }}>
                 <div className="filters-row" style={{ alignItems: 'flex-end' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, fontSize: '0.875rem' }}>
                         <FiCalendar /> Period:
                     </div>
-                    {['all', 'today', 'week', 'month', 'custom'].map((p) => (
-                        <button
-                            key={p}
-                            className={`btn btn-sm ${period === p ? 'btn-primary' : 'btn-secondary'}`}
-                            onClick={() => setPeriod(p)}
+                    {/* Desktop View Buttons */}
+                    <div className="desktop-period-selector" style={{ display: 'flex', gap: '8px' }}>
+                        {['all', 'today', 'week', 'month', 'custom'].map((p) => (
+                            <button
+                                key={p}
+                                className={`btn btn-sm ${period === p ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setPeriod(p)}
+                            >
+                                {periodLabel[p]}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Mobile View Dropdown */}
+                    <div className="mobile-period-selector">
+                        <select
+                            className="status-select"
+                            value={period}
+                            onChange={(e) => setPeriod(e.target.value)}
+                            style={{ width: '100%', padding: '10px 16px', fontSize: '1rem', background: 'var(--bg-surface)' }}
                         >
-                            {periodLabel[p]}
-                        </button>
-                    ))}
+                            {['all', 'today', 'week', 'month', 'custom'].map((p) => (
+                                <option key={p} value={p}>
+                                    {periodLabel[p]}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
                     {period === 'custom' && (
-                        <>
+                        <div className="custom-date-inputs">
                             <div className="form-group" style={{ margin: 0, maxWidth: '160px' }}>
                                 <input
                                     type="date"
@@ -187,7 +206,7 @@ export default function ReportsPage() {
                                     style={{ padding: '6px 10px', fontSize: '0.8125rem' }}
                                 />
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
@@ -241,15 +260,15 @@ export default function ReportsPage() {
                             <tbody>
                                 {productProfits.map((p, i) => (
                                     <tr key={i}>
-                                        <td className="font-bold">{p.name}</td>
-                                        <td>{p.unitsSold}</td>
-                                        <td>{formatCurrency(p.revenue)}</td>
-                                        <td>{formatCurrency(p.cost)}</td>
-                                        <td>{formatCurrency(p.gst)}</td>
-                                        <td className={p.profit >= 0 ? 'text-success font-bold' : 'text-danger font-bold'}>
+                                        <td data-label="Product" className="font-bold">{p.name}</td>
+                                        <td data-label="Units Sold">{p.unitsSold}</td>
+                                        <td data-label="Revenue">{formatCurrency(p.revenue)}</td>
+                                        <td data-label="Cost">{formatCurrency(p.cost)}</td>
+                                        <td data-label="GST">{formatCurrency(p.gst)}</td>
+                                        <td data-label="Profit" className={p.profit >= 0 ? 'text-success font-bold' : 'text-danger font-bold'}>
                                             {formatCurrency(p.profit)}
                                         </td>
-                                        <td>
+                                        <td data-label="Margin">
                                             <span className={`badge ${p.profit >= 0 ? 'badge-in-stock' : 'badge-low-stock'}`}>
                                                 {p.revenue > 0 ? ((p.profit / p.revenue) * 100).toFixed(1) : 0}%
                                             </span>
@@ -286,7 +305,7 @@ export default function ReportsPage() {
                             <tbody>
                                 {topPerformers.map((p, i) => (
                                     <tr key={p.id}>
-                                        <td>
+                                        <td data-label="Rank">
                                             <span style={{
                                                 background: i === 0 ? 'var(--warning-500)' : i === 1 ? 'var(--gray-400)' : i === 2 ? '#cd7f32' : 'var(--gray-200)',
                                                 color: i < 3 ? 'white' : 'var(--text-secondary)',
@@ -297,9 +316,9 @@ export default function ReportsPage() {
                                                 {i + 1}
                                             </span>
                                         </td>
-                                        <td className="font-bold">{p.name}</td>
-                                        <td>{p.unitsSold}</td>
-                                        <td>{formatCurrency(p.revenue)}</td>
+                                        <td data-label="Product" className="font-bold">{p.name}</td>
+                                        <td data-label="Sold">{p.unitsSold}</td>
+                                        <td data-label="Revenue">{formatCurrency(p.revenue)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -325,14 +344,14 @@ export default function ReportsPage() {
                             <tbody>
                                 {lowPerformers.map((p) => (
                                     <tr key={p.id}>
-                                        <td className="font-bold">{p.name}</td>
-                                        <td>{p.unitsSold}</td>
-                                        <td>
+                                        <td data-label="Product" className="font-bold">{p.name}</td>
+                                        <td data-label="Sold">{p.unitsSold}</td>
+                                        <td data-label="Stock">
                                             <span className={`badge ${p.stock <= 10 ? 'badge-low-stock' : 'badge-in-stock'}`}>
                                                 {p.stock}
                                             </span>
                                         </td>
-                                        <td>
+                                        <td data-label="Status">
                                             {p.unitsSold === 0 ? (
                                                 <span className="badge badge-unpaid">No Sales</span>
                                             ) : p.unitsSold <= 2 ? (
@@ -369,11 +388,11 @@ export default function ReportsPage() {
                                     const profit = data.sales - data.gst - data.cost;
                                     return (
                                         <tr key={month}>
-                                            <td className="font-bold">{month}</td>
-                                            <td>{data.orders}</td>
-                                            <td>{formatCurrency(data.sales)}</td>
-                                            <td>{formatCurrency(data.cost)}</td>
-                                            <td className={profit >= 0 ? 'text-success font-bold' : 'text-danger font-bold'}>
+                                            <td data-label="Month" className="font-bold">{month}</td>
+                                            <td data-label="Orders">{data.orders}</td>
+                                            <td data-label="Sales">{formatCurrency(data.sales)}</td>
+                                            <td data-label="Cost">{formatCurrency(data.cost)}</td>
+                                            <td data-label="Profit" className={profit >= 0 ? 'text-success font-bold' : 'text-danger font-bold'}>
                                                 {formatCurrency(profit)}
                                             </td>
                                         </tr>

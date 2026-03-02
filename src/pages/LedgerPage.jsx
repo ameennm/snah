@@ -179,30 +179,30 @@ export default function LedgerPage() {
                         <tbody>
                             {filtered.map((entry) => (
                                 <tr key={entry.id}>
-                                    <td>
+                                    <td data-label="Date">
                                         {new Date(entry.date).toLocaleDateString('en-IN', {
                                             day: '2-digit',
                                             month: 'short',
                                             year: 'numeric',
                                         })}
                                     </td>
-                                    <td>
+                                    <td data-label="Type">
                                         <span
                                             className={`badge ${entry.type === 'income' ? 'badge-paid' : 'badge-unpaid'}`}
                                         >
                                             {entry.type === 'income' ? '↓ Income' : '↑ Expense'}
                                         </span>
                                     </td>
-                                    <td>{entry.category}</td>
-                                    <td>{entry.description}</td>
-                                    <td className="font-mono text-muted">{entry.reference || '—'}</td>
-                                    <td
+                                    <td data-label="Category">{entry.category}</td>
+                                    <td data-label="Description">{entry.description}</td>
+                                    <td data-label="Reference" className="font-mono text-muted">{entry.reference || '—'}</td>
+                                    <td data-label="Amount"
                                         className={`font-bold ${entry.type === 'income' ? 'text-success' : 'text-danger'
                                             }`}
                                     >
                                         {entry.type === 'income' ? '+' : '-'} {formatCurrency(entry.amount)}
                                     </td>
-                                    <td
+                                    <td data-label="Balance"
                                         className="font-bold"
                                         style={{
                                             color:
@@ -214,7 +214,7 @@ export default function LedgerPage() {
                                         {formatCurrency(balanceMap[entry.id] || 0)}
                                     </td>
                                     {hasPermission('dashboard') && (
-                                        <td>
+                                        <td data-label="Actions">
                                             <button
                                                 className="btn btn-secondary btn-sm btn-icon"
                                                 title="Delete"

@@ -231,12 +231,12 @@ export default function OrdersPage() {
                                 const dueAmt = Math.max(0, order.total - paidAmt);
                                 return (
                                     <tr key={order.id} style={order.status === 'returned' ? { opacity: 0.6, textDecoration: 'line-through' } : {}}>
-                                        <td className="font-mono font-bold">{order.id}</td>
-                                        <td>{customer?.name || 'Unknown'}</td>
-                                        <td className="font-bold">{formatCurrency(order.total)}</td>
-                                        <td className="text-success font-bold">{formatCurrency(paidAmt)}</td>
-                                        <td className={dueAmt > 0 ? 'text-danger font-bold' : 'text-success font-bold'}>{formatCurrency(dueAmt)}</td>
-                                        <td>
+                                        <td data-label="Order ID" className="font-mono font-bold">{order.id}</td>
+                                        <td data-label="Customer">{customer?.name || 'Unknown'}</td>
+                                        <td data-label="Total" className="font-bold">{formatCurrency(order.total)}</td>
+                                        <td data-label="Paid" className="text-success font-bold">{formatCurrency(paidAmt)}</td>
+                                        <td data-label="Due" className={dueAmt > 0 ? 'text-danger font-bold' : 'text-success font-bold'}>{formatCurrency(dueAmt)}</td>
+                                        <td data-label="Payment">
                                             <div className="flex items-center gap-8">
                                                 <select
                                                     value={order.paymentStatus}
@@ -259,7 +259,7 @@ export default function OrdersPage() {
                                                 )}
                                             </div>
                                         </td>
-                                        <td>
+                                        <td data-label="Status">
                                             <select
                                                 value={order.status}
                                                 onChange={(e) => handleStatusChange(order.id, e.target.value)}
@@ -271,8 +271,8 @@ export default function OrdersPage() {
                                                 <option value="returned">Returned</option>
                                             </select>
                                         </td>
-                                        <td style={{ whiteSpace: 'nowrap' }}>{formatDate(order.createdAt)}</td>
-                                        <td>
+                                        <td data-label="Date" style={{ whiteSpace: 'nowrap' }}>{formatDate(order.createdAt)}</td>
+                                        <td data-label="Actions">
                                             <div className="flex gap-8">
                                                 <button className="btn btn-secondary btn-sm btn-icon" title="View" onClick={() => setViewOrder(order)}>
                                                     <FiEye size={14} />

@@ -159,23 +159,23 @@ export default function ProductsPage() {
                         <tbody>
                             {filtered.map((p, i) => (
                                 <tr key={p.id}>
-                                    <td>{i + 1}</td>
-                                    <td className="font-bold">{p.name}</td>
-                                    <td>{formatCurrency(p.purchasePrice)}</td>
-                                    <td>{formatCurrency(p.sellingPrice)}</td>
-                                    <td>{p.gst}%</td>
-                                    <td>
+                                    <td data-label="#">{i + 1}</td>
+                                    <td data-label="Product" className="font-bold">{p.name}</td>
+                                    <td data-label="Purchase">{formatCurrency(p.purchasePrice)}</td>
+                                    <td data-label="Selling">{formatCurrency(p.sellingPrice)}</td>
+                                    <td data-label="GST">{p.gst}%</td>
+                                    <td data-label="Stock">
                                         <span
                                             className={`badge ${p.stock <= 10 ? 'badge-low-stock' : 'badge-in-stock'}`}
                                         >
                                             {p.stock}
                                         </span>
                                     </td>
-                                    <td className="text-success font-bold">
+                                    <td data-label="Profit/Unit" className="text-success font-bold">
                                         {formatCurrency(p.sellingPrice - p.purchasePrice)}
                                     </td>
                                     {hasPermission('editStock') && (
-                                        <td>
+                                        <td data-label="Actions">
                                             <div className="flex gap-8">
                                                 <button
                                                     className="btn btn-secondary btn-sm btn-icon"
