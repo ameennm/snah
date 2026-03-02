@@ -68,13 +68,6 @@ export default function DashboardPage() {
     const returnedOrders = filteredOrders.filter(o => o.status === 'returned');
     const totalOrders = filteredOrders.length;
     const totalSales = activeOrders.reduce((sum, o) => sum + o.total, 0);
-    const totalCost = activeOrders.reduce((sum, o) => {
-        return sum + o.items.reduce((itemSum, item) => {
-            const product = getProductById(item.productId);
-            return itemSum + (product ? product.purchasePrice * item.quantity : 0);
-        }, 0);
-    }, 0);
-    const totalProfit = totalSales - totalCost;
     const totalProducts = products.length;
     const lowStockProducts = products.filter((p) => p.stock <= 10);
 
@@ -91,23 +84,17 @@ export default function DashboardPage() {
                         name: product.name,
                         unitsSold: 0,
                         revenue: 0,
-                        cost: 0,
                         stock: product.stock,
                         orderCount: 0,
                     };
                 }
                 map[item.productId].unitsSold += item.quantity;
                 map[item.productId].revenue += item.price * item.quantity;
-                map[item.productId].cost += product.purchasePrice * item.quantity;
                 map[item.productId].orderCount += 1;
             });
         });
 
-        const list = Object.values(map).map((p) => ({
-            ...p,
-            profit: p.revenue - p.cost,
-            margin: p.revenue > 0 ? ((p.revenue - p.cost) / p.revenue * 100) : 0,
-        }));
+        const list = Object.values(map);
 
         return {
             topSellers: [...list].sort((a, b) => b.unitsSold - a.unitsSold),
@@ -243,19 +230,8 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                <div className="stat-card">
-                    <div className="stat-icon yellow">
-                        <FiTrendingUp />
-                    </div>
-                    <div className="stat-info">
-                        <div className="stat-label">Total Profit</div>
-                        <div className="stat-value">{formatCurrency(totalProfit)}</div>
-                        <div className="stat-change up">
-                            ↑ {((totalProfit / (totalSales || 1)) * 100).toFixed(1)}% margin
-                        </div>
-                    </div>
-                </div>
-
+                {/* Products Summary Instead (Or left blank / refactored if we wanted to omit)  */}
+                {/* For example, omitted Profit stat card */}
                 <div className="stat-card">
                     <div className="stat-icon red">
                         <FiPackage />
@@ -287,7 +263,6 @@ export default function DashboardPage() {
                                     <th>Product</th>
                                     <th>Units Sold</th>
                                     <th>Revenue</th>
-                                    <th>Profit</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -307,7 +282,6 @@ export default function DashboardPage() {
                                         <td className="font-bold">{p.name}</td>
                                         <td>{p.unitsSold}</td>
                                         <td>{formatCurrency(p.revenue)}</td>
-                                        <td className="text-success font-bold">{formatCurrency(p.profit)}</td>
                                     </tr>
                                 ))}
                                 {productPerformance.topSellers.length === 0 && (

@@ -10,7 +10,6 @@ export default function ProductsPage() {
     const [editProduct, setEditProduct] = useState(null);
     const [form, setForm] = useState({
         name: '',
-        purchasePrice: '',
         sellingPrice: '',
         gst: '',
         stock: '',
@@ -21,14 +20,13 @@ export default function ProductsPage() {
     );
 
     const openAdd = () => {
-        setForm({ name: '', purchasePrice: '', sellingPrice: '', gst: '', stock: '' });
+        setForm({ name: '', sellingPrice: '', gst: '', stock: '' });
         setShowAdd(true);
     };
 
     const openEdit = (product) => {
         setForm({
             name: product.name,
-            purchasePrice: String(product.purchasePrice),
             sellingPrice: String(product.sellingPrice),
             gst: String(product.gst),
             stock: String(product.stock),
@@ -37,10 +35,9 @@ export default function ProductsPage() {
     };
 
     const handleSave = () => {
-        if (!form.name || !form.purchasePrice || !form.sellingPrice) return;
+        if (!form.name || !form.sellingPrice) return;
         const data = {
             name: form.name,
-            purchasePrice: Number(form.purchasePrice),
             sellingPrice: Number(form.sellingPrice),
             gst: Number(form.gst) || 0,
             stock: Number(form.stock) || 0,
@@ -52,7 +49,7 @@ export default function ProductsPage() {
             addProduct(data);
             setShowAdd(false);
         }
-        setForm({ name: '', purchasePrice: '', sellingPrice: '', gst: '', stock: '' });
+        setForm({ name: '', sellingPrice: '', gst: '', stock: '' });
     };
 
     const handleDelete = (id) => {
@@ -76,16 +73,6 @@ export default function ProductsPage() {
                 />
             </div>
             <div className="form-row">
-                <div className="form-group">
-                    <label>Purchase Price *</label>
-                    <input
-                        type="number"
-                        placeholder="0.00"
-                        value={form.purchasePrice}
-                        onChange={(e) => setForm({ ...form, purchasePrice: e.target.value })}
-                        required
-                    />
-                </div>
                 <div className="form-group">
                     <label>Selling Price *</label>
                     <input
@@ -148,11 +135,9 @@ export default function ProductsPage() {
                             <tr>
                                 <th>#</th>
                                 <th>Product Name</th>
-                                <th>Purchase Price</th>
                                 <th>Selling Price</th>
                                 <th>GST %</th>
                                 <th>Stock</th>
-                                <th>Profit/Unit</th>
                                 {hasPermission('editStock') && <th>Actions</th>}
                             </tr>
                         </thead>
@@ -161,7 +146,6 @@ export default function ProductsPage() {
                                 <tr key={p.id}>
                                     <td data-label="#">{i + 1}</td>
                                     <td data-label="Product" className="font-bold">{p.name}</td>
-                                    <td data-label="Purchase">{formatCurrency(p.purchasePrice)}</td>
                                     <td data-label="Selling">{formatCurrency(p.sellingPrice)}</td>
                                     <td data-label="GST">{p.gst}%</td>
                                     <td data-label="Stock">
@@ -170,9 +154,6 @@ export default function ProductsPage() {
                                         >
                                             {p.stock}
                                         </span>
-                                    </td>
-                                    <td data-label="Profit/Unit" className="text-success font-bold">
-                                        {formatCurrency(p.sellingPrice - p.purchasePrice)}
                                     </td>
                                     {hasPermission('editStock') && (
                                         <td data-label="Actions">

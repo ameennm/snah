@@ -76,26 +76,26 @@ export default {
             if (path === '/api/products' && method === 'GET') {
                 const { results } = await env.DB.prepare('SELECT * FROM products ORDER BY id DESC').all();
                 return json(results.map(p => ({
-                    id: p.id, name: p.name, purchasePrice: p.purchase_price,
+                    id: p.id, name: p.name,
                     sellingPrice: p.selling_price, gst: p.gst, stock: p.stock,
                 })));
             }
 
             if (path === '/api/products' && method === 'POST') {
-                const { name, purchasePrice, sellingPrice, gst, stock } = await request.json();
+                const { name, sellingPrice, gst, stock } = await request.json();
                 const result = await env.DB.prepare(
-                    'INSERT INTO products (name, purchase_price, selling_price, gst, stock) VALUES (?, ?, ?, ?, ?)'
-                ).bind(name, purchasePrice, sellingPrice, gst, stock || 0).run();
-                return json({ id: result.meta.last_row_id, name, purchasePrice, sellingPrice, gst, stock: stock || 0 }, 201);
+                    'INSERT INTO products (name, selling_price, gst, stock) VALUES (?, ?, ?, ?)'
+                ).bind(name, sellingPrice, gst, stock || 0).run();
+                return json({ id: result.meta.last_row_id, name, sellingPrice, gst, stock: stock || 0 }, 201);
             }
 
             if (path.startsWith('/api/products/') && method === 'PUT') {
                 const id = parseInt(path.split('/').pop());
-                const { name, purchasePrice, sellingPrice, gst, stock } = await request.json();
+                const { name, sellingPrice, gst, stock } = await request.json();
                 await env.DB.prepare(
-                    'UPDATE products SET name = ?, purchase_price = ?, selling_price = ?, gst = ?, stock = ? WHERE id = ?'
-                ).bind(name, purchasePrice, sellingPrice, gst, stock, id).run();
-                return json({ id, name, purchasePrice, sellingPrice, gst, stock });
+                    'UPDATE products SET name = ?, selling_price = ?, gst = ?, stock = ? WHERE id = ?'
+                ).bind(name, sellingPrice, gst, stock, id).run();
+                return json({ id, name, sellingPrice, gst, stock });
             }
 
             if (path.startsWith('/api/products/') && method === 'DELETE') {
