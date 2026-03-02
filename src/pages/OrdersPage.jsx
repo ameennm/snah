@@ -137,7 +137,7 @@ export default function OrdersPage() {
         }
         if (newPayment === 'partial') {
             setShowPaymentModal(order);
-            setPaymentInput(String(order?.paidAmount || ''));
+            setPaymentInput('');
             return;
         }
         updateOrder(orderId, data);
@@ -146,12 +146,13 @@ export default function OrdersPage() {
 
     const handleAddPayment = () => {
         if (!showPaymentModal || !paymentInput) return;
-        const newPaidAmount = Number(paymentInput);
-        if (isNaN(newPaidAmount) || newPaidAmount < 0) return;
+        const inputAmount = Number(paymentInput);
+        if (isNaN(inputAmount) || inputAmount <= 0) return;
 
         const order = showPaymentModal;
-        const finalPaid = newPaidAmount;
-        const newStatus = finalPaid >= order.total ? 'paid' : (finalPaid > 0 ? 'partial' : 'not_paid');
+        const currentPaid = order.paidAmount || 0;
+        const finalPaid = currentPaid + inputAmount;
+        const newStatus = finalPaid >= order.total ? 'paid' : 'partial';
 
         updateOrder(order.id, { paidAmount: finalPaid, paymentStatus: newStatus });
         if (viewOrder && viewOrder.id === order.id) {
@@ -335,26 +336,26 @@ export default function OrdersPage() {
                             </div>
                         </div>
                         <div className="form-group">
-                            <label>Total Paid Amount (₹)</label>
+                            <label>New Amount Received (₹)</label>
                             <input
                                 type="number"
-                                placeholder="Enter total amount received so far"
+                                placeholder="Enter recently received amount"
                                 value={paymentInput}
                                 onChange={(e) => setPaymentInput(e.target.value)}
                                 min="0"
-                                max={showPaymentModal.total}
+                                max={Math.max(0, showPaymentModal.total - (showPaymentModal.paidAmount || 0))}
                                 autoFocus
                                 style={{ fontSize: '1.125rem', fontWeight: 700, padding: '14px' }}
                             />
                             <small style={{ color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                                Enter the total amount received so far including previous payments
+                                This will be added to the previously paid amount
                             </small>
                         </div>
                         {paymentInput && Number(paymentInput) > 0 && (
-                            <div style={{ background: Number(paymentInput) >= showPaymentModal.total ? 'var(--success-50)' : 'var(--warning-50)', padding: '12px', borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 600 }}>
-                                {Number(paymentInput) >= showPaymentModal.total
-                                    ? '✅ Full payment received — status will change to Paid'
-                                    : `⏳ Remaining: ${formatCurrency(showPaymentModal.total - Number(paymentInput))}`
+                            <div style={{ background: (showPaymentModal.paidAmount || 0) + Number(paymentInput) >= showPaymentModal.total ? 'var(--success-50)' : 'var(--warning-50)', padding: '12px', borderRadius: 'var(--radius-md)', fontSize: '0.875rem', fontWeight: 600 }}>
+                                {(showPaymentModal.paidAmount || 0) + Number(paymentInput) >= showPaymentModal.total
+                                    ? '✅ Full payment reached — status will change to Paid'
+                                    : `⏳ Remaining after this: ${formatCurrency(showPaymentModal.total - ((showPaymentModal.paidAmount || 0) + Number(paymentInput)))}`
                                 }
                             </div>
                         )}
@@ -524,7 +525,7 @@ export default function OrdersPage() {
                             </div>
                             {viewOrder.paymentStatus === 'partial' && viewOrder.status !== 'returned' && (
                                 <button className="btn btn-success btn-sm" style={{ marginTop: '10px', width: '100%', justifyContent: 'center' }}
-                                    onClick={() => { setShowPaymentModal(viewOrder); setPaymentInput(String(viewOrder.paidAmount || 0)); }}>
+                                    onClick={() => { setShowPaymentModal(viewOrder); setPaymentInput(''); }}>
                                     <FiDollarSign size={14} /> Add Payment
                                 </button>
                             )}
