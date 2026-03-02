@@ -5,14 +5,15 @@ const API_BASE = 'https://snah-api.muhammedmusthafaameennm.workers.dev/api';
 
 const AppContext = createContext();
 
+const savedUser = localStorage.getItem('snah_user');
 const initialState = {
-    user: null,
+    user: savedUser ? JSON.parse(savedUser) : null,
     customers: [],
     products: [],
     orders: [],
     ledger: [],
     sidebarOpen: false,
-    loading: true,
+    loading: !!savedUser, // Start loading if user exists to fetch data immediately
 };
 
 // Counter for temporary IDs (negative to never collide with DB IDs)
@@ -22,8 +23,10 @@ function nextTempId() { return tempIdCounter--; }
 function appReducer(state, action) {
     switch (action.type) {
         case 'LOGIN':
+            localStorage.setItem('snah_user', JSON.stringify(action.payload));
             return { ...state, user: action.payload };
         case 'LOGOUT':
+            localStorage.removeItem('snah_user');
             return { ...state, user: null, sidebarOpen: false };
         case 'TOGGLE_SIDEBAR':
             return { ...state, sidebarOpen: !state.sidebarOpen };
@@ -176,7 +179,7 @@ export function AppProvider({ children }) {
         [state.user]
     );
 
-    // ====== CUSTOMERS (Optimistic) ======
+    // ====== CUSTOMERS (Optimistic & Async) ======
     const addCustomer = useCallback((data) => {
         const tempId = nextTempId();
         const optimistic = { ...data, id: tempId, address: data.address || '', area: data.area || '' };
@@ -188,6 +191,12 @@ export function AppProvider({ children }) {
             .catch(() => dispatch({ type: 'DELETE_CUSTOMER', payload: tempId }));
 
         return optimistic;
+    }, []);
+
+    const addCustomerAsync = useCallback(async (data) => {
+        const real = await api('/customers', { method: 'POST', body: data });
+        dispatch({ type: 'ADD_CUSTOMER', payload: real });
+        return real;
     }, []);
 
     const updateCustomer = useCallback((data) => {
@@ -227,24 +236,27 @@ export function AppProvider({ children }) {
 
     // ====== ORDERS (Optimistic) ======
     const addOrder = useCallback((data) => {
-        const tempId = 'ORD-TMP-' + Date.now();
-        const optimistic = {
-            id: tempId, customerId: data.customerId, items: data.items,
-            subtotal: data.subtotal, gstAmount: data.gstAmount, total: data.total,
-            paidAmount: data.paidAmount || 0, paymentStatus: data.paymentStatus,
-            status: 'pending', trackingId: '', createdAt: new Date().toISOString(),
-            createdBy: data.createdBy,
-        };
-        dispatch({ type: 'ADD_ORDER', payload: optimistic });
+        return new Promise((resolve, reject) => {
+            const tempId = 'ORD-TMP-' + Date.now();
+            const optimistic = {
+                id: tempId, customerId: data.customerId, items: data.items,
+                subtotal: data.subtotal, gstAmount: data.gstAmount, total: data.total,
+                paidAmount: data.paidAmount || 0, paymentStatus: data.paymentStatus,
+                status: 'pending', trackingId: '', createdAt: new Date().toISOString(),
+                createdBy: data.createdBy,
+            };
+            dispatch({ type: 'ADD_ORDER', payload: optimistic });
 
-        api('/orders', { method: 'POST', body: data })
-            .then(real => dispatch({ type: 'REPLACE_ORDER', payload: { tempId, real } }))
-            .catch(() => {
-                dispatch({ type: 'DELETE_ORDER', payload: tempId });
-                alert('Failed to save order. Please try again.');
-            });
-
-        return optimistic;
+            api('/orders', { method: 'POST', body: data })
+                .then(real => {
+                    dispatch({ type: 'REPLACE_ORDER', payload: { tempId, real } });
+                    resolve(real);
+                })
+                .catch((err) => {
+                    dispatch({ type: 'DELETE_ORDER', payload: tempId });
+                    reject(err);
+                });
+        });
     }, []);
 
     const updateOrder = useCallback((id, data) => {
@@ -305,6 +317,7 @@ export function AppProvider({ children }) {
         logout,
         hasPermission,
         addCustomer,
+        addCustomerAsync,
         updateCustomer,
         deleteCustomer,
         addProduct,

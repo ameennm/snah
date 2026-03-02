@@ -4,7 +4,7 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus, FiDollarSign } from 'react-icons/fi';
 
 export default function OrdersPage() {
-    const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomer, addOrder, updateOrder, deleteOrder } = useApp();
+    const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomer, addCustomerAsync, addOrder, updateOrder, deleteOrder } = useApp();
     const [search, setSearch] = useState('');
     const [showCreate, setShowCreate] = useState(false);
     const [viewOrder, setViewOrder] = useState(null);
@@ -89,26 +89,32 @@ export default function OrdersPage() {
         const { subtotal, gstTotal, total } = calculateOrderTotal();
         const paidAmount = paymentStatus === 'paid' ? total : (paymentStatus === 'partial' ? Number(initialPaidAmount) || 0 : 0);
 
-        // Close form instantly
-        resetForm();
+        try {
+            // Determine customer ID (wait for real ID if creating a new customer)
+            let customerId;
+            if (matchedCustomer) {
+                customerId = matchedCustomer.id;
+            } else {
+                // Must use the async version here to get the real DB ID before creating the order
+                const realCustomer = await addCustomerAsync({
+                    name: customerName, phone: fullPhone,
+                    address: customerAddress, area: customerArea,
+                });
+                customerId = realCustomer.id;
+            }
 
-        // Determine customer ID (may need async for new customer)
-        let customerId;
-        if (matchedCustomer) {
-            customerId = matchedCustomer.id;
-        } else {
-            // For new customers, we add optimistically but also need real ID for the order
-            const optimistic = addCustomer({
-                name: customerName, phone: fullPhone,
-                address: customerAddress, area: customerArea,
+            // Await the order validation
+            await addOrder({
+                customerId, items, subtotal, gstAmount: gstTotal, total,
+                paymentStatus, paidAmount, createdBy: user.id,
             });
-            customerId = optimistic.id;
-        }
 
-        addOrder({
-            customerId, items, subtotal, gstAmount: gstTotal, total,
-            paymentStatus, paidAmount, createdBy: user.id,
-        });
+            // Close and reset form only upon success
+            resetForm();
+        } catch (error) {
+            console.error(error);
+            alert('Failed to save order. This may be due to a poor connection or invalid data. Please try again.');
+        }
     };
 
     const handleStatusChange = (orderId, newStatus) => {
