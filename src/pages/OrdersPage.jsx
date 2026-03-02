@@ -259,9 +259,9 @@ export default function OrdersPage() {
                                                     <button
                                                         className="btn btn-secondary btn-sm btn-icon"
                                                         title="Add Payment"
-                                                        onClick={() => { setShowPaymentModal(order); setPaymentInput(String(order.paidAmount || 0)); }}
+                                                        onClick={() => { setShowPaymentModal(order); setPaymentInput(''); }}
                                                     >
-                                                        <FiDollarSign size={14} />
+                                                        <FiPlus size={14} />
                                                     </button>
                                                 )}
                                             </div>
@@ -526,7 +526,7 @@ export default function OrdersPage() {
                             {viewOrder.paymentStatus === 'partial' && viewOrder.status !== 'returned' && (
                                 <button className="btn btn-success btn-sm" style={{ marginTop: '10px', width: '100%', justifyContent: 'center' }}
                                     onClick={() => { setShowPaymentModal(viewOrder); setPaymentInput(''); }}>
-                                    <FiDollarSign size={14} /> Add Payment
+                                    <FiPlus size={14} /> Add Payment
                                 </button>
                             )}
                         </div>
