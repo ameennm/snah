@@ -42,7 +42,7 @@ function getDateRange(period, customFrom, customTo) {
 }
 
 export default function DashboardPage() {
-    const { orders, products, customers, getCustomerById, getProductById } = useApp();
+    const { orders, products, customers, ledger, getCustomerById, getProductById } = useApp();
 
     // Date filter state
     const [period, setPeriod] = useState('all');
@@ -63,11 +63,29 @@ export default function DashboardPage() {
         [orders, from, to]
     );
 
+    // Filtered ledger by date
+    const filteredLedger = useMemo(
+        () => ledger.filter((l) => {
+            const d = new Date(l.date);
+            return d >= from && d < to;
+        }),
+        [ledger, from, to]
+    );
+
     // Calculations - exclude returned orders
     const activeOrders = filteredOrders.filter(o => o.status !== 'returned');
     const returnedOrders = filteredOrders.filter(o => o.status === 'returned');
     const totalOrders = filteredOrders.length;
-    const totalSales = activeOrders.reduce((sum, o) => sum + o.total, 0);
+    // Calculate total orders revenue (paid amount) vs pure sales
+    const totalSales = activeOrders.reduce((sum, o) => sum + o.paidAmount, 0);
+
+    // Calculate total expenses from ledger
+    const totalExpenses = filteredLedger
+        .filter(l => l.type === 'expense')
+        .reduce((sum, l) => sum + l.amount, 0);
+
+    const totalProfit = totalSales - totalExpenses;
+
     const totalProducts = products.length;
     const lowStockProducts = products.filter((p) => p.stock <= 10);
 
@@ -230,8 +248,20 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
+                <div className="stat-card">
+                    <div className="stat-icon yellow">
+                        <FiTrendingUp />
+                    </div>
+                    <div className="stat-info">
+                        <div className="stat-label">Total Profit</div>
+                        <div className="stat-value">{formatCurrency(totalProfit)}</div>
+                        <div className={`stat-change ${totalProfit >= 0 ? 'up' : 'down'}`}>
+                            {totalProfit >= 0 ? '↑' : '↓'} Profit Based on Ledger
+                        </div>
+                    </div>
+                </div>
+
                 {/* Products Summary Instead (Or left blank / refactored if we wanted to omit)  */}
-                {/* For example, omitted Profit stat card */}
                 <div className="stat-card">
                     <div className="stat-icon red">
                         <FiPackage />
