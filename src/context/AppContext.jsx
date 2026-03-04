@@ -1,7 +1,7 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
 import { PERMISSIONS } from '../data/mockData';
 
-const API_BASE = 'https://snah-api.muhammedmusthafaameennm.workers.dev/api';
+const API_BASE = '/api';
 
 const AppContext = createContext();
 
