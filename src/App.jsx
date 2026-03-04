@@ -9,6 +9,12 @@ import OrdersPage from './pages/OrdersPage';
 import TrackingPage from './pages/TrackingPage';
 import LedgerPage from './pages/LedgerPage';
 import ReportsPage from './pages/ReportsPage';
+import CrmDashboardPage from './pages/crm/CrmDashboardPage';
+import CrmLeadsPage from './pages/crm/CrmLeadsPage';
+import CrmRemindersPage from './pages/crm/CrmRemindersPage';
+import CrmMissedPage from './pages/crm/CrmMissedPage';
+import CustomMessagesPage from './pages/crm/CustomMessagesPage';
+import CrmToast from './components/crm/CrmToast';
 
 function ProtectedRoute({ children, permission }) {
   const { user, hasPermission } = useApp();
@@ -118,6 +124,46 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/crm/dashboard"
+          element={
+            <ProtectedRoute permission="crm">
+              <CrmDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/crm/leads"
+          element={
+            <ProtectedRoute permission="crm">
+              <CrmLeadsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/crm/reminders"
+          element={
+            <ProtectedRoute permission="crm">
+              <CrmRemindersPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/crm/missed"
+          element={
+            <ProtectedRoute permission="crm">
+              <CrmMissedPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/crm/messages"
+          element={
+            <ProtectedRoute permission="crm">
+              <CustomMessagesPage />
+            </ProtectedRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to={getDefaultRoute()} replace />} />
     </Routes>
@@ -129,6 +175,7 @@ export default function App() {
     <AppProvider>
       <BrowserRouter>
         <AppRoutes />
+        <CrmToast />
       </BrowserRouter>
     </AppProvider>
   );

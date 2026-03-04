@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:worker": "wrangler dev",
+    "dev:all": "start npm run dev:worker && npm run dev",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

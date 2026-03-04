@@ -1,7 +1,8 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
 import { PERMISSIONS } from '../data/mockData';
 
-const API_BASE = '/api';
+const API_BASE = 'https://snah-api.muhammedmusthafaameennm.workers.dev/api';
+export { API_BASE };
 
 const AppContext = createContext();
 
@@ -12,8 +13,9 @@ const initialState = {
     products: [],
     orders: [],
     ledger: [],
+    crmLeads: [],
     sidebarOpen: false,
-    loading: !!savedUser, // Start loading if user exists to fetch data immediately
+    loading: !!savedUser,
 };
 
 // Counter for temporary IDs (negative to never collide with DB IDs)
@@ -107,6 +109,18 @@ function appReducer(state, action) {
         case 'REPLACE_LEDGER':
             return { ...state, ledger: state.ledger.map(l => l.id === action.payload.tempId ? { ...l, ...action.payload.real } : l) };
 
+        // CRM Leads
+        case 'SET_CRM_LEADS':
+            return { ...state, crmLeads: action.payload };
+        case 'ADD_CRM_LEAD':
+            return { ...state, crmLeads: [action.payload, ...state.crmLeads] };
+        case 'UPDATE_CRM_LEAD':
+            return { ...state, crmLeads: state.crmLeads.map(l => l.id === action.payload.id ? { ...l, ...action.payload } : l) };
+        case 'DELETE_CRM_LEAD':
+            return { ...state, crmLeads: state.crmLeads.filter(l => l.id !== action.payload) };
+        case 'REPLACE_CRM_LEAD':
+            return { ...state, crmLeads: state.crmLeads.map(l => l.id === action.payload.tempId ? { ...l, ...action.payload.real } : l) };
+
         default:
             return state;
     }
@@ -141,13 +155,14 @@ export function AppProvider({ children }) {
     const loadAllData = async () => {
         dispatch({ type: 'SET_LOADING', payload: true });
         try {
-            const [customers, products, orders, ledger] = await Promise.all([
-                api('/customers'), api('/products'), api('/orders'), api('/ledger'),
+            const [customers, products, orders, ledger, crmLeads] = await Promise.all([
+                api('/customers'), api('/products'), api('/orders'), api('/ledger'), api('/crm/leads'),
             ]);
             dispatch({ type: 'SET_CUSTOMERS', payload: customers });
             dispatch({ type: 'SET_PRODUCTS', payload: products });
             dispatch({ type: 'SET_ORDERS', payload: orders });
             dispatch({ type: 'SET_LEDGER', payload: ledger });
+            dispatch({ type: 'SET_CRM_LEADS', payload: crmLeads });
         } catch (err) {
             console.error('Failed to load data:', err);
         }
@@ -294,6 +309,28 @@ export function AppProvider({ children }) {
         api(`/ledger/${id}`, { method: 'DELETE' }).catch(console.error);
     }, []);
 
+    // ====== CRM LEADS (Optimistic) ======
+    const addCrmLead = useCallback((data) => {
+        const tempId = 'CRM-TMP-' + Date.now();
+        const optimistic = { ...data, id: tempId, interested_products: data.interested_products || [], is_starred: false };
+        dispatch({ type: 'ADD_CRM_LEAD', payload: optimistic });
+        api('/crm/leads', { method: 'POST', body: data })
+            .then(real => dispatch({ type: 'REPLACE_CRM_LEAD', payload: { tempId, real } }))
+            .catch(() => dispatch({ type: 'DELETE_CRM_LEAD', payload: tempId }));
+        return optimistic;
+    }, []);
+
+    const updateCrmLead = useCallback((data) => {
+        dispatch({ type: 'UPDATE_CRM_LEAD', payload: data });
+        api(`/crm/leads/${data.id}`, { method: 'PUT', body: data }).catch(console.error);
+        return data;
+    }, []);
+
+    const deleteCrmLead = useCallback((id) => {
+        dispatch({ type: 'DELETE_CRM_LEAD', payload: id });
+        api(`/crm/leads/${id}`, { method: 'DELETE' }).catch(console.error);
+    }, []);
+
     // ====== HELPERS ======
     const getCustomerById = useCallback(
         (id) => state.customers.find(c => c.id === id),
@@ -328,6 +365,9 @@ export function AppProvider({ children }) {
         deleteOrder,
         addLedgerEntry,
         deleteLedgerEntry,
+        addCrmLead,
+        updateCrmLead,
+        deleteCrmLead,
         getCustomerById,
         getProductById,
         getOrdersForCustomer,

@@ -64,6 +64,26 @@ CREATE TABLE IF NOT EXISTS order_items (
   FOREIGN KEY (product_id) REFERENCES products(id)
 );
 
+-- CRM Leads table (Sales CRM module)
+CREATE TABLE IF NOT EXISTS crm_leads (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  whatsapp TEXT NOT NULL,
+  location TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'hot',
+  interested_products TEXT DEFAULT '[]',
+  amount REAL NOT NULL DEFAULT 0,
+  paid_amount REAL DEFAULT 0,
+  payment_status TEXT NOT NULL DEFAULT 'pending',
+  next_call_date TEXT DEFAULT '',
+  next_action_message TEXT DEFAULT '',
+  call_notes TEXT DEFAULT '',
+  not_interested_reason TEXT DEFAULT '',
+  is_starred INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Ledger table
 CREATE TABLE IF NOT EXISTS ledger (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

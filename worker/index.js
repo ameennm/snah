@@ -210,6 +210,98 @@ export default {
                 return json({ success: true });
             }
 
+            // ====== CRM LEADS ======
+            if (path === '/api/crm/leads' && method === 'GET') {
+                const { results } = await env.DB.prepare('SELECT * FROM crm_leads ORDER BY created_at DESC').all();
+                return json(results.map(l => ({
+                    ...l,
+                    interested_products: (() => { try { return JSON.parse(l.interested_products || '[]'); } catch { return []; } })(),
+                    lead_products: (() => { try { return JSON.parse(l.lead_products || '[]'); } catch { return []; } })(),
+                    sent_messages: (() => { try { return JSON.parse(l.sent_messages || '[]'); } catch { return []; } })(),
+                    is_starred: l.is_starred === 1,
+                })));
+            }
+
+            if (path === '/api/crm/leads' && method === 'POST') {
+                const body = await request.json();
+                const id = crypto.randomUUID();
+                const now = new Date().toISOString();
+                const productsJson = JSON.stringify(body.interested_products || []);
+                const leadProductsJson = JSON.stringify(body.lead_products || []);
+                const sentMessagesJson = JSON.stringify(body.sent_messages || []);
+                await env.DB.prepare(
+                    `INSERT INTO crm_leads (id, name, whatsapp, location, status, interested_products, lead_products, instagram, amount, paid_amount, payment_status, next_call_date, next_action_message, call_notes, not_interested_reason, is_starred, sent_messages, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                ).bind(
+                    id, body.name, body.whatsapp, body.location || '', body.status || 'hot',
+                    productsJson, leadProductsJson, body.instagram || '',
+                    body.amount || 0, body.paid_amount || 0,
+                    body.payment_status || 'pending', body.next_call_date || '',
+                    body.next_action_message || '', body.call_notes || '',
+                    body.not_interested_reason || '', body.is_starred ? 1 : 0,
+                    sentMessagesJson, now, now
+                ).run();
+                return json({ ...body, id, interested_products: body.interested_products || [], lead_products: body.lead_products || [], sent_messages: body.sent_messages || [], is_starred: !!body.is_starred, created_at: now, updated_at: now }, 201);
+            }
+
+            if (path.startsWith('/api/crm/leads/') && method === 'PUT') {
+                const id = path.split('/').pop();
+                const body = await request.json();
+                const now = new Date().toISOString();
+                const productsJson = JSON.stringify(body.interested_products || []);
+                const leadProductsJson2 = JSON.stringify(body.lead_products || []);
+                const sentMessagesJson = JSON.stringify(body.sent_messages || []);
+                await env.DB.prepare(
+                    `UPDATE crm_leads SET name=?, whatsapp=?, location=?, status=?, interested_products=?, lead_products=?, instagram=?, amount=?, paid_amount=?, payment_status=?, next_call_date=?, next_action_message=?, call_notes=?, not_interested_reason=?, is_starred=?, sent_messages=?, updated_at=? WHERE id=?`
+                ).bind(
+                    body.name, body.whatsapp, body.location || '', body.status,
+                    productsJson, leadProductsJson2, body.instagram || '',
+                    body.amount || 0, body.paid_amount || 0,
+                    body.payment_status, body.next_call_date || '',
+                    body.next_action_message || '', body.call_notes || '',
+                    body.not_interested_reason || '', body.is_starred ? 1 : 0,
+                    sentMessagesJson, now, id
+                ).run();
+                return json({ success: true });
+            }
+
+            if (path.startsWith('/api/crm/leads/') && method === 'DELETE') {
+                const id = path.split('/').pop();
+                await env.DB.prepare('DELETE FROM crm_leads WHERE id = ?').bind(id).run();
+                return json({ success: true });
+            }
+
+            // ====== CRM MESSAGE TEMPLATES ======
+            if (path === '/api/crm/messages' && method === 'GET') {
+                const { results } = await env.DB.prepare('SELECT * FROM crm_message_templates ORDER BY category, id').all();
+                return json(results);
+            }
+
+            if (path === '/api/crm/messages' && method === 'POST') {
+                const body = await request.json();
+                const now = new Date().toISOString();
+                const result = await env.DB.prepare(
+                    'INSERT INTO crm_message_templates (category, title, message, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+                ).bind(body.category, body.title, body.message, now, now).run();
+                return json({ id: result.meta.last_row_id, ...body, created_at: now, updated_at: now }, 201);
+            }
+
+            if (path.startsWith('/api/crm/messages/') && method === 'PUT') {
+                const id = path.split('/').pop();
+                const body = await request.json();
+                const now = new Date().toISOString();
+                await env.DB.prepare(
+                    'UPDATE crm_message_templates SET category=?, title=?, message=?, updated_at=? WHERE id=?'
+                ).bind(body.category, body.title, body.message, now, id).run();
+                return json({ ...body, id: parseInt(id), updated_at: now });
+            }
+
+            if (path.startsWith('/api/crm/messages/') && method === 'DELETE') {
+                const id = path.split('/').pop();
+                await env.DB.prepare('DELETE FROM crm_message_templates WHERE id=?').bind(id).run();
+                return json({ success: true });
+            }
+
             return error('Not found', 404);
         } catch (err) {
             return error(err.message || 'Internal server error', 500);
