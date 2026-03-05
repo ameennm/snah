@@ -5,4 +5,4 @@ compatibility_date = "2025-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "snah-db"
-database_id = "8b3211e1-0060-4128-8fc6-de6f442ebc6f"
+database_id = "85bfefd1-64fc-43e3-b85c-af1a0e3c5bd8"

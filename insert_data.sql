@@ -233,5 +233,3 @@ INSERT INTO order_items (order_id, product_id, quantity, price, gst) VALUES ('OR
 INSERT INTO customers (id, name, phone, area) VALUES (76, 'Hashim', '9800000075', 'Kerala');
 INSERT INTO orders (id, customer_id, subtotal, gst_amount, total, paid_amount, payment_status, status, created_at, created_by) VALUES ('ORD-2026-03-076', 76, 1700, 204, 1904, 1904, 'paid', 'delivered', '2026-01-01 10:00:00', 1);
 INSERT INTO order_items (order_id, product_id, quantity, price, gst) VALUES ('ORD-2026-03-076', 1, 2, 850, 12);
-- -   n e w   r u n  
- 
