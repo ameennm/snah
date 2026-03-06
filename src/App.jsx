@@ -42,21 +42,19 @@ function ProtectedRoute({ children, permission }) {
 }
 
 function AppRoutes() {
-  const { user } = useApp();
-
-  // Determine default route based on role
+  const { user, hasPermission } = useApp();
   const getDefaultRoute = () => {
     if (!user) return '/login';
-    switch (user.role) {
-      case 'super_admin':
-        return '/dashboard';
-      case 'employee_orders':
-        return '/orders';
-      case 'employee_tracking':
-        return '/tracking';
-      default:
-        return '/login';
+
+    // Fallbacks array in priority order
+    const fallbacks = ['dashboard', 'orders', 'tracking', 'crm', 'customers'];
+    for (const fb of fallbacks) {
+      if (hasPermission(fb)) {
+        return fb === 'crm' ? '/crm/dashboard' : `/${fb}`;
+      }
     }
+
+    return '/login'; // If they literally have 0 permissions
   };
 
   return (
