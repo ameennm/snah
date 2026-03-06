@@ -4,7 +4,7 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiEye, FiFilter } from 'react-icons/fi';
 
 export default function CustomersPage() {
-    const { customers, orders, products, hasPermission, getProductById, addCustomer, updateCustomer, deleteCustomer } = useApp();
+    const { customers, orders, products, hasPermission, getProductById, updateCustomer, deleteCustomer, addCustomerAsync, api } = useApp();
     const [search, setSearch] = useState('');
     const [filterProduct, setFilterProduct] = useState('all');
     const [filterType, setFilterType] = useState('all'); // 'all', 'repeated'
@@ -79,16 +79,21 @@ export default function CustomersPage() {
         setEditCustomer(customer);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!form.name || !form.phone) return;
-        if (editCustomer) {
-            updateCustomer({ ...editCustomer, ...form });
-            setEditCustomer(null);
-        } else {
-            addCustomer(form);
-            setShowAdd(false);
+        try {
+            if (editCustomer) {
+                const updated = await api(`/customers/${editCustomer.id}`, { method: 'PUT', body: form });
+                updateCustomer(updated);
+                setEditCustomer(null);
+            } else {
+                await addCustomerAsync(form);
+                setShowAdd(false);
+            }
+            setForm({ name: '', phone: '', address: '', area: '' });
+        } catch (err) {
+            alert(err.message || 'Error saving customer');
         }
-        setForm({ name: '', phone: '', address: '', area: '' });
     };
 
     const handleDelete = (id) => {

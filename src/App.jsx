@@ -9,6 +9,10 @@ import OrdersPage from './pages/OrdersPage';
 import TrackingPage from './pages/TrackingPage';
 import LedgerPage from './pages/LedgerPage';
 import ReportsPage from './pages/ReportsPage';
+import EmployeesPage from './pages/EmployeesPage';
+import ActivityLogsPage from './pages/ActivityLogsPage';
+import FollowupsPage from './pages/FollowupsPage';
+import DeliveryPartnersPage from './pages/DeliveryPartnersPage';
 import CrmDashboardPage from './pages/crm/CrmDashboardPage';
 import CrmLeadsPage from './pages/crm/CrmLeadsPage';
 import CrmRemindersPage from './pages/crm/CrmRemindersPage';
@@ -121,6 +125,38 @@ function AppRoutes() {
           element={
             <ProtectedRoute permission="reports">
               <ReportsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employees"
+          element={
+            <ProtectedRoute permission="createEmployee">
+              <EmployeesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/activity-logs"
+          element={
+            <ProtectedRoute permission="createEmployee">
+              <ActivityLogsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/followups"
+          element={
+            <ProtectedRoute permission="followups">
+              <FollowupsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/delivery-partners"
+          element={
+            <ProtectedRoute permission="deliveryPartners">
+              <DeliveryPartnersPage />
             </ProtectedRoute>
           }
         />

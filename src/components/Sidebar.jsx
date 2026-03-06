@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
     FiGrid, FiUsers, FiPackage, FiShoppingCart, FiTruck, FiBarChart2,
     FiBookOpen, FiLogOut, FiX, FiSettings, FiHelpCircle,
-    FiPhone, FiPhoneMissed, FiTarget, FiPieChart, FiMessageSquare,
+    FiPhone, FiPhoneMissed, FiTarget, FiPieChart, FiMessageSquare, FiList
 } from 'react-icons/fi';
 
 const NAV_ITEMS = [
@@ -11,9 +11,13 @@ const NAV_ITEMS = [
     { path: '/customers', label: 'Customers', icon: FiUsers, permission: 'customers' },
     { path: '/products', label: 'Products', icon: FiPackage, permission: 'products' },
     { path: '/orders', label: 'Orders', icon: FiShoppingCart, permission: 'orders' },
+    { path: '/followups', label: 'Followups', icon: FiMessageSquare, permission: 'followups' },
+    { path: '/employees', label: 'Employees', icon: FiUsers, permission: 'createEmployee' },
     { path: '/tracking', label: 'Tracking', icon: FiTruck, permission: 'tracking' },
     { path: '/ledger', label: 'Ledger', icon: FiBookOpen, permission: 'ledger' },
     { path: '/reports', label: 'Reports', icon: FiBarChart2, permission: 'reports' },
+    { path: '/delivery-partners', label: 'Delivery Partners', icon: FiTruck, permission: 'deliveryPartners' },
+    { path: '/activity-logs', label: 'Activity Logs', icon: FiList, adminOnly: true },
 ];
 
 const MORE_NAV_ITEMS = [
@@ -62,7 +66,8 @@ export default function Sidebar() {
                 <nav className="sidebar-nav">
                     <div className="sidebar-section-title">Menu</div>
                     {NAV_ITEMS.map((item) => {
-                        if (!hasPermission(item.permission)) return null;
+                        if (item.adminOnly && user?.role !== 'super_admin') return null;
+                        if (item.permission && !hasPermission(item.permission)) return null;
                         const Icon = item.icon;
                         return (
                             <NavLink key={item.path} to={item.path}
@@ -95,10 +100,10 @@ export default function Sidebar() {
 
                 <div className="sidebar-footer">
                     <div className="sidebar-user">
-                        <div className="sidebar-user-avatar">{user?.name?.charAt(0)?.toUpperCase()}</div>
+                        <div className="sidebar-user-avatar">{user?.role === 'super_admin' ? 'S' : user?.name?.charAt(0)?.toUpperCase()}</div>
                         <div className="sidebar-user-info">
-                            <div className="sidebar-user-name">{user?.name}</div>
-                            <div className="sidebar-user-role">{user?.roleLabel}</div>
+                            <div className="sidebar-user-name">{user?.role === 'super_admin' ? 'Super Admin' : user?.name}</div>
+                            {user?.role !== 'super_admin' && <div className="sidebar-user-role">{user?.roleLabel}</div>}
                         </div>
                     </div>
                     <button className="logout-btn" onClick={logout}>
@@ -114,10 +119,10 @@ export default function Sidebar() {
             <div className={`drawer mobile-only ${sidebarOpen ? 'open' : ''}`}>
                 <div className="drawer-header">
                     <div className="drawer-user">
-                        <div className="avatar">{user?.name?.charAt(0)?.toUpperCase()}</div>
+                        <div className="avatar">{user?.role === 'super_admin' ? 'S' : user?.name?.charAt(0)?.toUpperCase()}</div>
                         <div className="user-info">
-                            <span className="name">{user?.name}</span>
-                            <span className="role">{user?.roleLabel}</span>
+                            <span className="name">{user?.role === 'super_admin' ? 'Super Admin' : user?.name}</span>
+                            {user?.role !== 'super_admin' && <span className="role">{user?.roleLabel}</span>}
                         </div>
                     </div>
                     <button className="icon-btn close-btn" onClick={closeSidebar}><FiX size={24} /></button>
@@ -147,7 +152,7 @@ export default function Sidebar() {
                                     <NavLink key={item.path} to={item.path} className="drawer-item" onClick={closeSidebar}>
                                         <Icon size={20} className="icon" />
                                         <span>{item.label}</span>
-                                        {item.badge ? <span className={`crm-nav-badge crm-nav-badge-${item.badgeColor}`} style={{ marginLeft: 'auto' }}>{item.badge}</span> : null}
+                                        {item.badge ? <span className={`crm - nav - badge crm - nav - badge - ${item.badgeColor} `} style={{ marginLeft: 'auto' }}>{item.badge}</span> : null}
                                     </NavLink>
                                 );
                             })}

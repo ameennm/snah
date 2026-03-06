@@ -38,13 +38,14 @@ export default function TrackingPage() {
         const customer = getCustomerById(order.customerId);
         if (!customer || !order.trackingId) return;
 
-        const message = `Hello ${customer.name},
+        const dispatchDate = new Date(order.shippedDate || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
+        const partner = order.deliveryPartner || 'Courier';
+        const link = order.trackingLink || 'https://example.com/track';
 
-Your order has been shipped.
+        const message = `Your order has been dispatched on ${dispatchDate} Via ${partner}. Use tracking ID [${order.trackingId}] to follow your delivery using link [${link}]. Thanks for choosing SNAH Organics. 
+www.snahorganics.com 
 
-Your Tracking ID is: ${order.trackingId}
-
-Thank you.`;
+Please Note ⚠️ : Opening video is must to claim the parcel issues .`;
 
         const phone = customer.phone.replace(/[^0-9]/g, '');
         const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;

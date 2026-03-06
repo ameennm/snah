@@ -127,7 +127,7 @@ function appReducer(state, action) {
 }
 
 // API helper
-async function api(endpoint, options = {}) {
+export async function api(endpoint, options = {}) {
     const res = await fetch(`${API_BASE}${endpoint}`, {
         headers: { 'Content-Type': 'application/json' },
         ...options,
@@ -256,9 +256,11 @@ export function AppProvider({ children }) {
             const optimistic = {
                 id: tempId, customerId: data.customerId, items: data.items,
                 subtotal: data.subtotal, gstAmount: data.gstAmount, total: data.total,
+                discount: data.discount || 0, discountType: data.discountType || 'flat',
                 paidAmount: data.paidAmount || 0, paymentStatus: data.paymentStatus,
                 status: 'pending', trackingId: '', createdAt: new Date().toISOString(),
-                createdBy: data.createdBy,
+                createdBy: data.createdBy, isRedispatched: !!data.redispatchedFromId,
+                redispatchedFromId: data.redispatchedFromId || null
             };
             dispatch({ type: 'ADD_ORDER', payload: optimistic });
 
@@ -372,6 +374,7 @@ export function AppProvider({ children }) {
         getProductById,
         getOrdersForCustomer,
         refreshData: loadAllData,
+        api,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -19,6 +19,16 @@ function error(message, status = 400) {
     return json({ error: message }, status);
 }
 
+async function logActivity(env, userId, action, entity, entityId, details = '') {
+    if (!userId) return;
+    try {
+        await env.DB.prepare('INSERT INTO activity_logs (user_id, action, entity, entity_id, details) VALUES (?, ?, ?, ?, ?)')
+            .bind(userId, action, entity, String(entityId), details).run();
+    } catch (e) {
+        console.error('Activity log error:', e);
+    }
+}
+
 export default {
     async fetch(request, env) {
         if (request.method === 'OPTIONS') {
@@ -37,10 +47,82 @@ export default {
                     'SELECT id, username, name, email, role, role_label FROM users WHERE username = ? AND password = ?'
                 ).bind(username, password).first();
                 if (!user) return error('Invalid username or password', 401);
+
+                await logActivity(env, user.id, 'login', 'user', user.id, 'User logged in');
+
                 return json({
                     success: true,
                     user: { id: user.id, username: user.username, name: user.name, email: user.email, role: user.role, roleLabel: user.role_label },
                 });
+            }
+
+            // ====== USERS ======
+            if (path === '/api/users' && method === 'GET') {
+                const { results } = await env.DB.prepare('SELECT id, username, name, email, role, role_label, created_at, status FROM users ORDER BY id DESC').all();
+                return json(results);
+            }
+            if (path === '/api/users' && method === 'POST') {
+                const { username, password, name, email, role, roleLabel, createdBy } = await request.json();
+                const existing = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
+                if (existing) return error('Username already taken', 400);
+
+                const result = await env.DB.prepare(
+                    'INSERT INTO users (username, password, name, email, role, role_label) VALUES (?, ?, ?, ?, ?, ?)'
+                ).bind(username, password, name, email || '', role, roleLabel).run();
+                const newId = result.meta.last_row_id;
+                await logActivity(env, createdBy, 'create', 'user', newId, `Created user ${username}`);
+                return json({ id: newId, username, name, email, role, role_label: roleLabel }, 201);
+            }
+            if (path.startsWith('/api/users/') && method === 'PUT') {
+                const id = parseInt(path.split('/').pop());
+                const body = await request.json();
+                const updates = [];
+                const values = [];
+
+                if (body.name) { updates.push('name = ?'); values.push(body.name); }
+                if (body.username) { updates.push('username = ?'); values.push(body.username); }
+                if (body.email !== undefined) { updates.push('email = ?'); values.push(body.email); }
+                if (body.role) { updates.push('role = ?'); values.push(body.role); }
+                if (body.roleLabel) { updates.push('role_label = ?'); values.push(body.roleLabel); }
+                if (body.password) { updates.push('password = ?'); values.push(body.password); }
+                if (body.status) { updates.push('status = ?'); values.push(body.status); }
+
+                if (updates.length > 0) {
+                    values.push(id);
+                    await env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+                    await logActivity(env, body.updatedBy, 'update', 'user', id, `Updated user ${id}`);
+                }
+                return json({ success: true });
+            }
+
+            // ====== ACTIVITY LOGS ======
+            if (path === '/api/activity_logs' && method === 'GET') {
+                const { results } = await env.DB.prepare(`
+                    SELECT a.*, u.name as user_name, u.role_label as user_role 
+                    FROM activity_logs a 
+                    LEFT JOIN users u ON a.user_id = u.id 
+                    ORDER BY a.created_at DESC LIMIT 500
+                `).all();
+                return json(results);
+            }
+
+            // ====== DELIVERY PARTNERS ======
+            if (path === '/api/delivery_partners' && method === 'GET') {
+                const { results } = await env.DB.prepare('SELECT * FROM delivery_partners ORDER BY name').all();
+                return json(results);
+            }
+            if (path === '/api/delivery_partners' && method === 'POST') {
+                const { name, trackingUrlTemplate } = await request.json();
+                const result = await env.DB.prepare(
+                    'INSERT INTO delivery_partners (name, tracking_url_template) VALUES (?, ?)'
+                ).bind(name, trackingUrlTemplate).run();
+                return json({ id: result.meta.last_row_id, name, tracking_url_template: trackingUrlTemplate }, 201);
+            }
+
+            if (path.startsWith('/api/delivery_partners/') && method === 'DELETE') {
+                const id = parseInt(path.split('/').pop());
+                await env.DB.prepare('DELETE FROM delivery_partners WHERE id = ?').bind(id).run();
+                return json({ success: true });
             }
 
             // ====== CUSTOMERS ======
@@ -50,24 +132,34 @@ export default {
             }
 
             if (path === '/api/customers' && method === 'POST') {
-                const { name, phone, address, area } = await request.json();
+                const { name, phone, address, area, createdBy } = await request.json();
+                const existing = await env.DB.prepare('SELECT id FROM customers WHERE phone = ?').bind(phone).first();
+                if (existing) return error('A customer with this mobile number already exists.', 400);
+
                 const result = await env.DB.prepare(
                     'INSERT INTO customers (name, phone, address, area) VALUES (?, ?, ?, ?)'
                 ).bind(name, phone, address || '', area || '').run();
-                return json({ id: result.meta.last_row_id, name, phone, address: address || '', area: area || '' }, 201);
+                const newId = result.meta.last_row_id;
+                await logActivity(env, createdBy, 'create', 'customer', newId, `Created customer ${name} (${phone})`);
+                return json({ id: newId, name, phone, address: address || '', area: area || '' }, 201);
             }
 
             if (path.startsWith('/api/customers/') && method === 'PUT') {
                 const id = parseInt(path.split('/').pop());
-                const { name, phone, address, area } = await request.json();
+                const { name, phone, address, area, updatedBy } = await request.json();
+                const existing = await env.DB.prepare('SELECT id FROM customers WHERE phone = ? AND id != ?').bind(phone, id).first();
+                if (existing) return error('A customer with this mobile number already exists.', 400);
+
                 await env.DB.prepare(
                     'UPDATE customers SET name = ?, phone = ?, address = ?, area = ? WHERE id = ?'
                 ).bind(name, phone, address || '', area || '', id).run();
+                await logActivity(env, updatedBy, 'update', 'customer', id, `Updated customer ${name}`);
                 return json({ id, name, phone, address: address || '', area: area || '' });
             }
 
             if (path.startsWith('/api/customers/') && method === 'DELETE') {
                 const id = parseInt(path.split('/').pop());
+                // No tracking updatedBy here unless provided as query param or we assume it's super admin
                 await env.DB.prepare('DELETE FROM customers WHERE id = ?').bind(id).run();
                 return json({ success: true });
             }
@@ -110,9 +202,16 @@ export default {
                 const { results: allItems } = await env.DB.prepare('SELECT * FROM order_items').all();
                 const mapped = orders.map(o => ({
                     id: o.id, customerId: o.customer_id, subtotal: o.subtotal,
+                    discount: o.discount || 0, discountType: o.discount_type || 'flat',
                     gstAmount: o.gst_amount, total: o.total, paidAmount: o.paid_amount || 0,
                     paymentStatus: o.payment_status, trackingId: o.tracking_id,
-                    status: o.status, createdAt: o.created_at, createdBy: o.created_by,
+                    deliveryPartner: o.delivery_partner || '', trackingLink: o.tracking_link || '',
+                    status: o.status, returnReason: o.return_reason || '',
+                    isRedispatched: o.is_redispatched === 1,
+                    redispatchedFromId: o.redispatched_from_id || null,
+                    shippedDate: o.shipped_date || null,
+                    deliveredDate: o.delivered_date || null,
+                    createdAt: o.created_at, createdBy: o.created_by,
                     items: allItems.filter(i => i.order_id === o.id).map(i => ({
                         productId: i.product_id, quantity: i.quantity, price: i.price, gst: i.gst,
                     })),
@@ -121,7 +220,7 @@ export default {
             }
 
             if (path === '/api/orders' && method === 'POST') {
-                const { customerId, items, subtotal, gstAmount, total, paymentStatus, paidAmount, createdBy } = await request.json();
+                const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId } = await request.json();
 
                 const maxResult = await env.DB.prepare("SELECT id FROM orders ORDER BY id DESC LIMIT 1").first();
                 let nextNum = 1;
@@ -134,19 +233,24 @@ export default {
                 const finalPaidAmount = paymentStatus === 'paid' ? total : (paidAmount || 0);
 
                 await env.DB.prepare(
-                    'INSERT INTO orders (id, customer_id, subtotal, gst_amount, total, paid_amount, payment_status, tracking_id, status, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                ).bind(orderId, customerId, subtotal, gstAmount, total, finalPaidAmount, paymentStatus, '', 'pending', createdAt, createdBy).run();
+                    'INSERT INTO orders (id, customer_id, subtotal, discount, discount_type, gst_amount, total, paid_amount, payment_status, tracking_id, status, created_at, created_by, is_redispatched, redispatched_from_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                ).bind(orderId, customerId, subtotal, discount || 0, discountType || 'flat', gstAmount, total, finalPaidAmount, paymentStatus, '', 'pending', createdAt, createdBy, redispatchedFromId ? 1 : 0, redispatchedFromId || null).run();
 
                 for (const item of items) {
                     await env.DB.prepare(
                         'INSERT INTO order_items (order_id, product_id, quantity, price, gst) VALUES (?, ?, ?, ?, ?)'
                     ).bind(orderId, item.productId, item.quantity, item.price, item.gst).run();
+
+                    // Do not reduce stock for services (e.g. products like "Shipping Charge" without stock might have 0, but ideally stock is not tracked for services. We leave it as is for physical products)
                     await env.DB.prepare(
                         'UPDATE products SET stock = stock - ? WHERE id = ?'
                     ).bind(item.quantity, item.productId).run();
                 }
 
-                return json({ id: orderId, customerId, items, subtotal, gstAmount, total, paidAmount: finalPaidAmount, paymentStatus, status: 'pending', createdAt, trackingId: '' }, 201);
+                await logActivity(env, createdBy, 'create', 'order', orderId, `Created order ${orderId} for ₹${total}`);
+
+                // If it's a redispatch, mark the old order as redispatched (optional, but handled on client)
+                return json({ id: orderId, customerId, items, subtotal, discount: discount || 0, discountType: discountType || 'flat', gstAmount, total, paidAmount: finalPaidAmount, paymentStatus, status: 'pending', createdAt, trackingId: '', isRedispatched: !!redispatchedFromId, redispatchedFromId: redispatchedFromId || null }, 201);
             }
 
             if (path.startsWith('/api/orders/') && method === 'PUT') {
@@ -155,10 +259,36 @@ export default {
                 const updates = [];
                 const values = [];
 
-                if (body.status !== undefined) { updates.push('status = ?'); values.push(body.status); }
+                let setStatusToShipped = false;
+
+                if (body.status !== undefined) {
+                    updates.push('status = ?'); values.push(body.status);
+                    if (body.status === 'shipped') {
+                        updates.push('shipped_date = ?'); values.push(new Date().toISOString());
+                    } else if (body.status === 'delivered') {
+                        updates.push('delivered_date = ?'); values.push(new Date().toISOString());
+                    }
+                }
                 if (body.paymentStatus !== undefined) { updates.push('payment_status = ?'); values.push(body.paymentStatus); }
                 if (body.paidAmount !== undefined) { updates.push('paid_amount = ?'); values.push(body.paidAmount); }
-                if (body.trackingId !== undefined) { updates.push('tracking_id = ?'); values.push(body.trackingId); }
+
+                if (body.trackingId !== undefined) {
+                    updates.push('tracking_id = ?'); values.push(body.trackingId);
+                    if (body.trackingId && !body.status && body.currentStatus !== 'shipped' && body.currentStatus !== 'delivered') {
+                        setStatusToShipped = true;
+                    }
+                }
+                if (setStatusToShipped) {
+                    updates.push('status = ?'); values.push('shipped');
+                    updates.push('shipped_date = ?'); values.push(new Date().toISOString());
+                    body.status = 'shipped'; // For activity log
+                }
+
+                if (body.deliveryPartner !== undefined) { updates.push('delivery_partner = ?'); values.push(body.deliveryPartner); }
+                if (body.trackingLink !== undefined) { updates.push('tracking_link = ?'); values.push(body.trackingLink); }
+
+                if (body.returnReason !== undefined) { updates.push('return_reason = ?'); values.push(body.returnReason); }
+                if (body.isRedispatched !== undefined) { updates.push('is_redispatched = ?'); values.push(body.isRedispatched ? 1 : 0); }
 
                 // If status is "returned", restore stock
                 if (body.status === 'returned' && body.restoreStock) {
@@ -173,12 +303,22 @@ export default {
                 if (updates.length > 0) {
                     values.push(id);
                     await env.DB.prepare(`UPDATE orders SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+
+                    let logStr = `Updated order ${id}`;
+                    if (body.status) logStr += `, status=${body.status}`;
+                    if (body.trackingId) logStr += `, trackingId=${body.trackingId}`;
+                    await logActivity(env, body.updatedBy, 'update', 'order', id, logStr);
                 }
-                return json({ success: true });
+                return json({ success: true, autoShipped: setStatusToShipped });
             }
 
             if (path.startsWith('/api/orders/') && method === 'DELETE') {
                 const id = path.split('/').pop();
+
+                // Get URL parameter for updatedBy if needed
+                const urlParams = new URL(request.url).searchParams;
+                const deletedBy = urlParams.get('userId');
+
                 const { results: orderItems } = await env.DB.prepare(
                     'SELECT product_id, quantity FROM order_items WHERE order_id = ?'
                 ).bind(id).all();
@@ -187,6 +327,9 @@ export default {
                 }
                 await env.DB.prepare('DELETE FROM order_items WHERE order_id = ?').bind(id).run();
                 await env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(id).run();
+
+                await logActivity(env, deletedBy, 'delete', 'order', id, `Deleted order ${id}`);
+
                 return json({ success: true });
             }
 
@@ -197,16 +340,29 @@ export default {
             }
 
             if (path === '/api/ledger' && method === 'POST') {
-                const { type, category, description, amount, date, reference } = await request.json();
+                const { type, category, description, amount, date, reference, createdBy } = await request.json();
                 const result = await env.DB.prepare(
-                    'INSERT INTO ledger (type, category, description, amount, date, reference) VALUES (?, ?, ?, ?, ?, ?)'
-                ).bind(type, category, description || '', amount, date, reference || '').run();
-                return json({ id: result.meta.last_row_id, type, category, description, amount, date, reference: reference || '' }, 201);
+                    'INSERT INTO ledger (type, category, description, amount, date, reference, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)'
+                ).bind(type, category, description || '', amount, date, reference || '', createdBy || null).run();
+
+                await logActivity(env, createdBy, 'create', 'ledger', result.meta.last_row_id, `Added ${type} logic of ₹${amount} for ${category}`);
+
+                return json({ id: result.meta.last_row_id, type, category, description: description || '', amount, date, reference: reference || '', created_by: createdBy || null }, 201);
             }
 
             if (path.startsWith('/api/ledger/') && method === 'DELETE') {
                 const id = parseInt(path.split('/').pop());
                 await env.DB.prepare('DELETE FROM ledger WHERE id = ?').bind(id).run();
+                return json({ success: true });
+            }
+
+            if (path.startsWith('/api/ledger/') && method === 'PUT') {
+                const id = parseInt(path.split('/').pop());
+                const { type, category, description, amount, date, reference, updatedBy } = await request.json();
+                await env.DB.prepare(
+                    'UPDATE ledger SET type=?, category=?, description=?, amount=?, date=?, reference=? WHERE id=?'
+                ).bind(type, category, description || '', amount, date, reference || '', id).run();
+                await logActivity(env, updatedBy, 'update', 'ledger', id, `Updated ledger entry ₹${amount}`);
                 return json({ success: true });
             }
 
@@ -241,6 +397,7 @@ export default {
                     body.not_interested_reason || '', body.is_starred ? 1 : 0,
                     sentMessagesJson, now, now
                 ).run();
+                await logActivity(env, body.createdBy, 'create', 'crm_lead', id, `Added CRM Lead ${body.name}`);
                 return json({ ...body, id, interested_products: body.interested_products || [], lead_products: body.lead_products || [], sent_messages: body.sent_messages || [], is_starred: !!body.is_starred, created_at: now, updated_at: now }, 201);
             }
 
@@ -262,6 +419,7 @@ export default {
                     body.not_interested_reason || '', body.is_starred ? 1 : 0,
                     sentMessagesJson, now, id
                 ).run();
+                await logActivity(env, body.updatedBy, 'update', 'crm_lead', id, `Updated CRM Lead ${body.name}`);
                 return json({ success: true });
             }
 

@@ -4,7 +4,7 @@
 
 -- Users
 INSERT INTO users (username, password, name, email, role, role_label) VALUES
-  ('admin', 'admin123', 'Ameena', 'admin@snah.com', 'super_admin', 'Super Admin'),
+  ('admin', 'admin123', 'Super Admin', 'admin@snah.com', 'super_admin', 'Super Admin'),
   ('employee1', 'emp123', 'Rahul', 'rahul@snah.com', 'employee_orders', 'Order Creator'),
   ('employee2', 'emp456', 'Priya', 'priya@snah.com', 'employee_tracking', 'Tracking Manager');
 
