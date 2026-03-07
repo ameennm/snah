@@ -222,12 +222,11 @@ export default {
             if (path === '/api/orders' && method === 'POST') {
                 const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId } = await request.json();
 
-                const maxResult = await env.DB.prepare("SELECT id FROM orders ORDER BY id DESC LIMIT 1").first();
-                let nextNum = 1;
-                if (maxResult && maxResult.id) {
-                    const num = parseInt(maxResult.id.replace('ORD-', ''));
-                    if (!isNaN(num)) nextNum = num + 1;
-                }
+                // Only consider simple "ORD-NNN" IDs (not date-prefixed ones like "ORD-2026-03-076")
+                const maxResult = await env.DB.prepare(
+                    "SELECT MAX(CAST(SUBSTR(id, 5) AS INTEGER)) as mx FROM orders WHERE id GLOB 'ORD-[0-9]*' AND id NOT GLOB '*-*-*'"
+                ).first();
+                let nextNum = (maxResult && maxResult.mx) ? maxResult.mx + 1 : 1;
                 const orderId = `ORD-${String(nextNum).padStart(3, '0')}`;
                 const createdAt = new Date().toISOString();
                 const finalPaidAmount = paymentStatus === 'paid' ? total : (paidAmount || 0);

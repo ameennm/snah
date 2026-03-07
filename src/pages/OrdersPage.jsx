@@ -120,14 +120,19 @@ export default function OrdersPage() {
 
     const handleCreateOrder = async (isRedispatch = false, redispatchOrder = null) => {
         const validItems = orderItems.filter((i) => i.productId && i.quantity > 0);
-        if (!customerName || !customerPhone || validItems.length === 0) return;
+        // Use matched customer's name if phone found an existing customer
+        const effectiveName = matchedCustomer ? matchedCustomer.name : customerName;
+        if (!effectiveName || !customerPhone || validItems.length === 0) return;
 
         const items = validItems.map((i) => {
             const product = getProductById(Number(i.productId));
+            if (!product) return null;
             return { productId: Number(i.productId), quantity: Number(i.quantity), price: product.sellingPrice, gst: product.gst };
-        });
+        }).filter(Boolean);
 
-        const { subtotal, gstTotal, total, disAmt } = calculateOrderTotal();
+        if (items.length === 0) return;
+
+        const { subtotal, gstTotal, total } = calculateOrderTotal();
         const paidAmount = paymentStatus === 'paid' ? total : (paymentStatus === 'partial' ? Number(initialPaidAmount) || 0 : 0);
 
         try {
@@ -136,30 +141,36 @@ export default function OrdersPage() {
                 customerId = matchedCustomer.id;
             } else {
                 const realCustomer = await addCustomerAsync({
-                    name: customerName, phone: fullPhone,
+                    name: effectiveName, phone: fullPhone,
                     address: customerAddress, area: customerArea,
                 });
                 customerId = realCustomer.id;
             }
 
-            await addOrder({
+            // Close modal immediately — order appears in list right away (optimistic)
+            resetForm();
+            setViewOrder(null);
+
+            // Fire-and-forget: addOrder optimistically updates state, syncs to DB in background
+            addOrder({
                 customerId, items, subtotal, gstAmount: gstTotal, total,
                 discount: discount || 0, discountType,
                 paymentStatus, paidAmount, createdBy: user.id,
                 createdAt: orderDate ? new Date(orderDate).toISOString() : new Date().toISOString(),
                 isRedispatched: !!(isRedispatch && redispatchOrder),
                 redispatchedFromId: isRedispatch && redispatchOrder ? redispatchOrder.id : null
+            }).then(() => {
+                if (isRedispatch && redispatchOrder) {
+                    updateOrder(redispatchOrder.id, { isRedispatched: true });
+                }
+            }).catch(error => {
+                console.error('Order sync failed:', error);
+                alert('Order could not be saved to server. Please refresh and try again.');
             });
 
-            if (isRedispatch && redispatchOrder) {
-                updateOrder(redispatchOrder.id, { isRedispatched: true });
-            }
-
-            resetForm();
-            setViewOrder(null);
         } catch (error) {
             console.error(error);
-            alert('Failed to save order. Make sure customer phone does not already exist with a different profile.');
+            alert('Failed to create customer. Make sure the phone number is not already in use.');
         }
     };
 
@@ -490,7 +501,7 @@ export default function OrdersPage() {
                         <>
                             <button className="btn btn-secondary" onClick={resetForm}>Cancel</button>
                             <button className="btn btn-primary" onClick={() => handleCreateOrder()}
-                                disabled={!customerName || !customerPhone || orderItems.filter(i => i.productId).length === 0} id="submit-order-btn">
+                                disabled={!(matchedCustomer ? matchedCustomer.name : customerName) || !customerPhone || orderItems.filter(i => i.productId).length === 0} id="submit-order-btn">
                                 Create Order — {formatCurrency(total)}
                             </button>
                         </>
