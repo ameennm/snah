@@ -1,10 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus, FiDollarSign, FiMessageCircle, FiTruck, FiRefreshCcw } from 'react-icons/fi';
 
 export default function OrdersPage() {
     const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomerAsync, addOrder, updateOrder, deleteOrder, api } = useApp();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [search, setSearch] = useState('');
     const [showCreate, setShowCreate] = useState(false);
     const [viewOrder, setViewOrder] = useState(null);
@@ -37,10 +40,22 @@ export default function OrdersPage() {
     const [discountType, setDiscountType] = useState('flat'); // 'flat' or 'percent'
     const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
     const [trackingId, setTrackingId] = useState('');
+    const [newDeliveryPartner, setNewDeliveryPartner] = useState('');
 
     useEffect(() => {
         api('/delivery_partners').then(res => setDeliveryPartners(res || [])).catch(() => { });
     }, []);
+
+    // Auto-trigger redispatch if navigated here from Followups
+    useEffect(() => {
+        if (location.state?.redispatchOrder) {
+            const order = location.state.redispatchOrder;
+            // Clear state so back-navigation doesn't re-trigger
+            navigate(location.pathname, { replace: true, state: {} });
+            // Wait for deliveryPartners to load, then open
+            setTimeout(() => openRedispatch(order), 100);
+        }
+    }, [location.state]);
 
     // Auto-match customer by phone
     const fullPhone = useMemo(() => {
@@ -121,8 +136,15 @@ export default function OrdersPage() {
         setPaymentStatus('not_paid'); setInitialPaidAmount('');
         setDiscount(''); setDiscountType('flat');
         setOrderDate(new Date().toISOString().split('T')[0]);
-        setTrackingId('');
+        setTrackingId(''); setNewDeliveryPartner('');
         setShowCreate(false);
+    };
+
+    // Compute tracking link using ONLY DB-saved delivery partners
+    const getTrackingLink = (partnerName) => {
+        if (!partnerName) return '';
+        const found = deliveryPartners.find(dp => dp.name === partnerName);
+        return found?.tracking_url_template || '';
     };
 
     const handleCreateOrder = async (isRedispatch = false, redispatchOrder = null) => {
@@ -164,6 +186,8 @@ export default function OrdersPage() {
                 discount: discount || 0, discountType,
                 paymentStatus, paidAmount, createdBy: user.id,
                 trackingId: trackingId.trim() || '',
+                deliveryPartner: newDeliveryPartner || '',
+                trackingLink: getTrackingLink(newDeliveryPartner),
                 createdAt: orderDate ? new Date(orderDate).toISOString() : new Date().toISOString(),
                 isRedispatched: !!(isRedispatch && redispatchOrder),
                 redispatchedFromId: isRedispatch && redispatchOrder ? redispatchOrder.id : null
@@ -250,15 +274,8 @@ export default function OrdersPage() {
         let updates = { [field]: value };
 
         if (field === 'deliveryPartner') {
-            let link = '';
-            if (value === 'Indian Post') link = 'https://www.indiapost.gov.in/#trackandtrace';
-            else if (value === 'DTDC') link = 'https://www.dtdc.in/tracking/shipment-tracking.asp';
-            else if (value === 'BlueDart') link = 'https://www.bluedart.com/';
-            else {
-                const partner = deliveryPartners.find(dp => dp.name === value);
-                if (partner) link = partner.tracking_url_template || '';
-            }
-            updates.trackingLink = link;
+            const partner = deliveryPartners.find(dp => dp.name === value);
+            updates.trackingLink = partner?.tracking_url_template || '';
         }
 
         const updated = { ...viewOrder, ...updates };
@@ -591,15 +608,29 @@ export default function OrdersPage() {
                         </div>
                     </div>
 
-                    {/* Tracking ID */}
-                    <div className="form-group" style={{ marginTop: '12px' }}>
-                        <label>Tracking ID <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span></label>
-                        <input
-                            type="text"
-                            placeholder="Enter tracking / AWB number if available"
-                            value={trackingId}
-                            onChange={e => setTrackingId(e.target.value)}
-                        />
+                    {/* Delivery Partner + Tracking ID side by side */}
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                        <div className="form-group" style={{ flex: 1 }}>
+                            <label>Delivery Partner <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span></label>
+                            <select value={newDeliveryPartner} onChange={e => setNewDeliveryPartner(e.target.value)}>
+                                <option value="">Select Partner</option>
+                                {deliveryPartners.map(dp => <option key={dp.id} value={dp.name}>{dp.name}</option>)}
+                            </select>
+                            {newDeliveryPartner && getTrackingLink(newDeliveryPartner) && (
+                                <small style={{ color: 'var(--text-tertiary)', marginTop: '4px', display: 'block' }}>
+                                    🔗 {getTrackingLink(newDeliveryPartner)}
+                                </small>
+                            )}
+                        </div>
+                        <div className="form-group" style={{ flex: 1 }}>
+                            <label>Tracking ID <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span></label>
+                            <input
+                                type="text"
+                                placeholder="AWB / Tracking number"
+                                value={trackingId}
+                                onChange={e => setTrackingId(e.target.value)}
+                            />
+                        </div>
                     </div>
 
                     <div style={{ marginTop: '16px', padding: '16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-md)' }}>
@@ -649,9 +680,6 @@ export default function OrdersPage() {
                                     onChange={(e) => handleViewFieldChange('deliveryPartner', e.target.value)}
                                 >
                                     <option value="">Select Partner</option>
-                                    <option value="Indian Post">Indian Post</option>
-                                    <option value="DTDC">DTDC</option>
-                                    <option value="BlueDart">BlueDart</option>
                                     {deliveryPartners.map(dp => <option key={dp.id} value={dp.name}>{dp.name}</option>)}
                                 </select>
                             </div>
@@ -665,16 +693,21 @@ export default function OrdersPage() {
                                     onChange={(e) => handleViewFieldChange('trackingId', e.target.value)}
                                     placeholder="Enter tracking ID"
                                 />
-                                {viewOrder.trackingId && (
-                                    <a
-                                        href={`https://wa.me/${getCustomerById(viewOrder.customerId)?.phone}?text=${encodeURIComponent(`Your order has been dispatched on ${new Date(viewOrder.shippedDate || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.')} Via ${viewOrder.deliveryPartner || 'Courier'}. Use tracking ID [${viewOrder.trackingId}] to follow your delivery using link [${viewOrder.trackingLink || 'https://example.com/track'}]. Thanks for choosing SNAH Organics.\nwww.snahorganics.com\n\nPlease Note ⚠️ : Opening video is must to claim the parcel issues.`)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="btn btn-success" style={{ whiteSpace: 'nowrap' }}
-                                    >
-                                        <FiMessageCircle /> Notify
-                                    </a>
-                                )}
+                                {viewOrder.trackingId && (() => {
+                                    const tLink = viewOrder.trackingLink || '';
+                                    const isWa = tLink.includes('wa.me') || tLink.includes('whatsapp');
+                                    // If tracking link is a WhatsApp link, open it directly
+                                    // Otherwise send a WhatsApp message to the customer with tracking info
+                                    const href = isWa
+                                        ? tLink
+                                        : `https://wa.me/${getCustomerById(viewOrder.customerId)?.phone}?text=${encodeURIComponent(`Your order has been dispatched on ${new Date(viewOrder.shippedDate || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.')} Via ${viewOrder.deliveryPartner || 'Courier'}. Use tracking ID [${viewOrder.trackingId}] to follow your delivery using link [${tLink || 'https://snahorganics.com'}]. Thanks for choosing SNAH Organics.\nwww.snahorganics.com\n\nPlease Note ⚠️ : Opening video is must to claim the parcel issues.`)}`;
+                                    return (
+                                        <a href={href} target="_blank" rel="noopener noreferrer"
+                                            className="btn btn-success" style={{ whiteSpace: 'nowrap' }}>
+                                            <FiMessageCircle /> {isWa ? 'Open WhatsApp' : 'Notify'}
+                                        </a>
+                                    );
+                                })()}
                             </div>
                             {(viewOrder.trackingId && viewOrder.status === 'pending') && (
                                 <small style={{ color: 'var(--success-600)' }}>Status automatically set to Shipped on save.</small>

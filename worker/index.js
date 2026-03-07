@@ -220,7 +220,7 @@ export default {
             }
 
             if (path === '/api/orders' && method === 'POST') {
-                const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId, trackingId } = await request.json();
+                const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId, trackingId, deliveryPartner, trackingLink } = await request.json();
 
                 // Generate date-prefixed order ID in IST (DD-MM-YYYY-NNN, resets each day)
                 const istOffset = 5.5 * 60 * 60000;
@@ -246,8 +246,8 @@ export default {
                 const shippedDate = initialTrackingId ? createdAt : null;
 
                 await env.DB.prepare(
-                    'INSERT INTO orders (id, customer_id, subtotal, discount, discount_type, gst_amount, total, paid_amount, payment_status, tracking_id, status, shipped_date, created_at, created_by, is_redispatched, redispatched_from_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                ).bind(orderId, customerId, subtotal, discount || 0, discountType || 'flat', gstAmount, total, finalPaidAmount, paymentStatus, initialTrackingId, initialStatus, shippedDate, createdAt, createdBy, redispatchedFromId ? 1 : 0, redispatchedFromId || null).run();
+                    'INSERT INTO orders (id, customer_id, subtotal, discount, discount_type, gst_amount, total, paid_amount, payment_status, tracking_id, delivery_partner, tracking_link, status, shipped_date, created_at, created_by, is_redispatched, redispatched_from_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                ).bind(orderId, customerId, subtotal, discount || 0, discountType || 'flat', gstAmount, total, finalPaidAmount, paymentStatus, initialTrackingId, deliveryPartner || '', trackingLink || '', initialStatus, shippedDate, createdAt, createdBy, redispatchedFromId ? 1 : 0, redispatchedFromId || null).run();
 
                 for (const item of items) {
                     await env.DB.prepare(
@@ -263,7 +263,7 @@ export default {
                 await logActivity(env, createdBy, 'create', 'order', orderId, `Created order ${orderId} for ₹${total}`);
 
                 // If it's a redispatch, mark the old order as redispatched (optional, but handled on client)
-                return json({ id: orderId, customerId, items, subtotal, discount: discount || 0, discountType: discountType || 'flat', gstAmount, total, paidAmount: finalPaidAmount, paymentStatus, status: initialStatus, createdAt, trackingId: initialTrackingId, shippedDate, isRedispatched: !!redispatchedFromId, redispatchedFromId: redispatchedFromId || null }, 201);
+                return json({ id: orderId, customerId, items, subtotal, discount: discount || 0, discountType: discountType || 'flat', gstAmount, total, paidAmount: finalPaidAmount, paymentStatus, status: initialStatus, createdAt, trackingId: initialTrackingId, deliveryPartner: deliveryPartner || '', trackingLink: trackingLink || '', shippedDate, isRedispatched: !!redispatchedFromId, redispatchedFromId: redispatchedFromId || null }, 201);
             }
 
             if (path.startsWith('/api/orders/') && method === 'PUT') {
