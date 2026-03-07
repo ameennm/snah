@@ -12,6 +12,8 @@ export default function OrdersPage() {
     const [showPaymentModal, setShowPaymentModal] = useState(null);
     const [paymentInput, setPaymentInput] = useState('');
     const [activeTab, setActiveTab] = useState('all');
+    const [page, setPage] = useState(1);
+    const PAGE_SIZE = 20;
 
     // Return Modal
     const [showReturnModal, setShowReturnModal] = useState(null);
@@ -71,6 +73,9 @@ export default function OrdersPage() {
             return matchesSearch && matchesPayment;
         })
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+    const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
     const addItem = () => setOrderItems([...orderItems, { productId: '', quantity: 1 }]);
     const removeItem = (index) => setOrderItems(orderItems.filter((_, i) => i !== index));
@@ -324,7 +329,7 @@ export default function OrdersPage() {
                             <button
                                 key={tab.id}
                                 className={`btn btn-sm ${activeTab === tab.id ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => { setActiveTab(tab.id); setPage(1); }}
                             >
                                 {tab.label}
                             </button>
@@ -334,9 +339,9 @@ export default function OrdersPage() {
                     <div className="filters-row" style={{ width: '100%' }}>
                         <div className="search-bar">
                             <FiSearch className="search-icon" />
-                            <input placeholder="Search orders, tracking details..." value={search} onChange={(e) => setSearch(e.target.value)} id="order-search" />
+                            <input placeholder="Search orders, tracking details..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} id="order-search" />
                         </div>
-                        <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} style={{ maxWidth: '160px' }}>
+                        <select value={paymentFilter} onChange={(e) => { setPaymentFilter(e.target.value); setPage(1); }} style={{ maxWidth: '160px' }}>
                             <option value="all">All Payments</option>
                             <option value="paid">Paid</option>
                             <option value="not_paid">Not Paid</option>
@@ -358,7 +363,7 @@ export default function OrdersPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filtered.map((order) => {
+                            {paginated.map((order) => {
                                 const customer = getCustomerById(order.customerId);
                                 const daysSince = getDaysSince(order.shippedDate);
                                 return (
@@ -441,6 +446,21 @@ export default function OrdersPage() {
                         </tbody>
                     </table>
                 </div>
+                {totalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: '1px solid var(--border-light)', background: 'var(--gray-50)' }}>
+                        <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
+                            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} orders
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Prev</button>
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                                <button key={p} className={`btn btn-sm ${p === page ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPage(p)}
+                                    style={{ minWidth: '32px' }}>{p}</button>
+                            ))}
+                            <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ===== Return Modal ===== */}
