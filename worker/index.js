@@ -220,20 +220,34 @@ export default {
             }
 
             if (path === '/api/orders' && method === 'POST') {
-                const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId } = await request.json();
+                const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId, trackingId } = await request.json();
 
-                // Only consider simple "ORD-NNN" IDs (not date-prefixed ones like "ORD-2026-03-076")
+                // Generate date-prefixed order ID in IST (DD-MM-YYYY-NNN, resets each day)
+                const istOffset = 5.5 * 60 * 60000;
+                const istDate = new Date(Date.now() + istOffset);
+                const dd = String(istDate.getUTCDate()).padStart(2, '0');
+                const mm = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+                const yyyy = istDate.getUTCFullYear();
+                const datePrefix = `${dd}-${mm}-${yyyy}`; // e.g. "07-03-2026"
+
+                // Find the highest sequence number already used today
+                // Date prefix is 10 chars, dash is char 11, sequence starts at char 12
                 const maxResult = await env.DB.prepare(
-                    "SELECT MAX(CAST(SUBSTR(id, 5) AS INTEGER)) as mx FROM orders WHERE id GLOB 'ORD-[0-9]*' AND id NOT GLOB '*-*-*'"
-                ).first();
-                let nextNum = (maxResult && maxResult.mx) ? maxResult.mx + 1 : 1;
-                const orderId = `ORD-${String(nextNum).padStart(3, '0')}`;
+                    "SELECT MAX(CAST(SUBSTR(id, 12) AS INTEGER)) as mx FROM orders WHERE id LIKE ?"
+                ).bind(`${datePrefix}-%`).first();
+                const nextNum = (maxResult && maxResult.mx) ? maxResult.mx + 1 : 1;
+                const orderId = `${datePrefix}-${String(nextNum).padStart(3, '0')}`; // e.g. "07-03-2026-001"
+
                 const createdAt = new Date().toISOString();
                 const finalPaidAmount = paymentStatus === 'paid' ? total : (paidAmount || 0);
+                const initialTrackingId = trackingId ? trackingId.trim() : '';
+                // If tracking ID provided at creation time, mark as shipped right away
+                const initialStatus = initialTrackingId ? 'shipped' : 'pending';
+                const shippedDate = initialTrackingId ? createdAt : null;
 
                 await env.DB.prepare(
-                    'INSERT INTO orders (id, customer_id, subtotal, discount, discount_type, gst_amount, total, paid_amount, payment_status, tracking_id, status, created_at, created_by, is_redispatched, redispatched_from_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                ).bind(orderId, customerId, subtotal, discount || 0, discountType || 'flat', gstAmount, total, finalPaidAmount, paymentStatus, '', 'pending', createdAt, createdBy, redispatchedFromId ? 1 : 0, redispatchedFromId || null).run();
+                    'INSERT INTO orders (id, customer_id, subtotal, discount, discount_type, gst_amount, total, paid_amount, payment_status, tracking_id, status, shipped_date, created_at, created_by, is_redispatched, redispatched_from_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                ).bind(orderId, customerId, subtotal, discount || 0, discountType || 'flat', gstAmount, total, finalPaidAmount, paymentStatus, initialTrackingId, initialStatus, shippedDate, createdAt, createdBy, redispatchedFromId ? 1 : 0, redispatchedFromId || null).run();
 
                 for (const item of items) {
                     await env.DB.prepare(
@@ -249,7 +263,7 @@ export default {
                 await logActivity(env, createdBy, 'create', 'order', orderId, `Created order ${orderId} for ₹${total}`);
 
                 // If it's a redispatch, mark the old order as redispatched (optional, but handled on client)
-                return json({ id: orderId, customerId, items, subtotal, discount: discount || 0, discountType: discountType || 'flat', gstAmount, total, paidAmount: finalPaidAmount, paymentStatus, status: 'pending', createdAt, trackingId: '', isRedispatched: !!redispatchedFromId, redispatchedFromId: redispatchedFromId || null }, 201);
+                return json({ id: orderId, customerId, items, subtotal, discount: discount || 0, discountType: discountType || 'flat', gstAmount, total, paidAmount: finalPaidAmount, paymentStatus, status: initialStatus, createdAt, trackingId: initialTrackingId, shippedDate, isRedispatched: !!redispatchedFromId, redispatchedFromId: redispatchedFromId || null }, 201);
             }
 
             if (path.startsWith('/api/orders/') && method === 'PUT') {

@@ -36,6 +36,7 @@ export default function OrdersPage() {
     const [discount, setDiscount] = useState('');
     const [discountType, setDiscountType] = useState('flat'); // 'flat' or 'percent'
     const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
+    const [trackingId, setTrackingId] = useState('');
 
     useEffect(() => {
         api('/delivery_partners').then(res => setDeliveryPartners(res || [])).catch(() => { });
@@ -120,6 +121,7 @@ export default function OrdersPage() {
         setPaymentStatus('not_paid'); setInitialPaidAmount('');
         setDiscount(''); setDiscountType('flat');
         setOrderDate(new Date().toISOString().split('T')[0]);
+        setTrackingId('');
         setShowCreate(false);
     };
 
@@ -161,6 +163,7 @@ export default function OrdersPage() {
                 customerId, items, subtotal, gstAmount: gstTotal, total,
                 discount: discount || 0, discountType,
                 paymentStatus, paidAmount, createdBy: user.id,
+                trackingId: trackingId.trim() || '',
                 createdAt: orderDate ? new Date(orderDate).toISOString() : new Date().toISOString(),
                 isRedispatched: !!(isRedispatch && redispatchOrder),
                 redispatchedFromId: isRedispatch && redispatchOrder ? redispatchOrder.id : null
@@ -586,6 +589,17 @@ export default function OrdersPage() {
                                 <option value="partial">Partial</option>
                             </select>
                         </div>
+                    </div>
+
+                    {/* Tracking ID */}
+                    <div className="form-group" style={{ marginTop: '12px' }}>
+                        <label>Tracking ID <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span></label>
+                        <input
+                            type="text"
+                            placeholder="Enter tracking / AWB number if available"
+                            value={trackingId}
+                            onChange={e => setTrackingId(e.target.value)}
+                        />
                     </div>
 
                     <div style={{ marginTop: '16px', padding: '16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-md)' }}>
