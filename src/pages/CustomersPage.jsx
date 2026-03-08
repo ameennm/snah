@@ -269,32 +269,61 @@ export default function CustomersPage() {
                     {customerOrders.length === 0 ? (
                         <div className="empty-state"><p>No orders found for this customer</p></div>
                     ) : (
-                        <div className="table-container">
-                            <table className="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Order ID</th>
-                                        <th>Products</th>
-                                        <th>Total</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {customerOrders.map((o) => (
-                                        <tr key={o.id}>
-                                            <td className="font-mono">{o.id}</td>
-                                            <td>
-                                                {o.items.map((item) => {
-                                                    const prod = getProductById(item.productId);
-                                                    return prod ? `${prod.name} x${item.quantity}` : '';
-                                                }).filter(Boolean).join(', ')}
-                                            </td>
-                                            <td className="font-bold">{formatCurrency(o.total)}</td>
-                                            <td>{getPaymentBadge(o.paymentStatus)}</td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {/* Product Summary */}
+                            {(() => {
+                                const productTotals = {};
+                                customerOrders.forEach(o => {
+                                    if (o.status !== 'returned' && o.items) {
+                                        o.items.forEach(item => {
+                                            const prod = getProductById(item.productId);
+                                            const name = prod?.name || `Product #${item.productId}`;
+                                            productTotals[name] = (productTotals[name] || 0) + item.quantity;
+                                        });
+                                    }
+                                });
+                                const entries = Object.entries(productTotals);
+                                if (entries.length === 0) return null;
+                                return (
+                                    <div style={{ background: 'var(--primary-50)', border: '1px solid var(--primary-200)', borderRadius: 'var(--radius-md)', padding: '12px 16px' }}>
+                                        <div style={{ fontWeight: 700, fontSize: '0.8125rem', marginBottom: '8px', color: 'var(--primary-700)' }}>📦 Products Ordered (Total)</div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                            {entries.map(([name, qty]) => (
+                                                <span key={name} style={{ background: 'var(--primary-100)', color: 'var(--primary-700)', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                    {name} × {qty}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                            <div className="table-container">
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Order ID</th>
+                                            <th>Products</th>
+                                            <th>Total</th>
+                                            <th>Status</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {customerOrders.map((o) => (
+                                            <tr key={o.id}>
+                                                <td className="font-mono">{o.id}</td>
+                                                <td>
+                                                    {o.items.map((item) => {
+                                                        const prod = getProductById(item.productId);
+                                                        return prod ? `${prod.name} x${item.quantity}` : '';
+                                                    }).filter(Boolean).join(', ')}
+                                                </td>
+                                                <td className="font-bold">{formatCurrency(o.total)}</td>
+                                                <td>{getPaymentBadge(o.paymentStatus)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
                 </Modal>

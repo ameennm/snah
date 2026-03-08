@@ -375,6 +375,7 @@ export default function OrdersPage() {
                             <tr>
                                 <th>Order ID</th>
                                 <th>Customer</th>
+                                <th>Products</th>
                                 <th>Total</th>
                                 <th>Payment</th>
                                 <th>Status</th>
@@ -398,6 +399,14 @@ export default function OrdersPage() {
                                         <td data-label="Customer">
                                             <div className="font-bold">{customer?.name || 'Unknown'}</div>
                                             <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{customer?.phone}</div>
+                                        </td>
+                                        <td data-label="Products" style={{ maxWidth: '200px' }}>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                {order.items?.map((item) => {
+                                                    const prod = getProductById(item.productId);
+                                                    return prod ? `${prod.name} x${item.quantity}` : `#${item.productId} x${item.quantity}`;
+                                                }).join(', ') || '—'}
+                                            </div>
                                         </td>
                                         <td data-label="Total">
                                             <div className="font-bold">{formatCurrency(order.total)}</div>
@@ -444,7 +453,7 @@ export default function OrdersPage() {
                                                 <button className="btn btn-secondary btn-sm btn-icon" title="View" onClick={() => setViewOrder(order)}>
                                                     <FiEye size={14} />
                                                 </button>
-                                                {hasPermission('createOrder') && (
+                                                {hasPermission('dashboard') && (
                                                     <button className="btn btn-secondary btn-sm btn-icon border-danger-light text-danger" title="Delete" onClick={() => handleDeleteOrder(order.id)}>
                                                         <FiTrash2 size={14} />
                                                     </button>
@@ -455,7 +464,7 @@ export default function OrdersPage() {
                                 );
                             })}
                             {filtered.length === 0 && (
-                                <tr><td colSpan={7}>
+                                <tr><td colSpan={8}>
                                     <div className="empty-state">
                                         <div className="empty-state-icon">🛒</div>
                                         <h3>No orders found</h3>

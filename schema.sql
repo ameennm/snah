@@ -9,8 +9,9 @@ CREATE TABLE IF NOT EXISTS users (
   password TEXT NOT NULL,
   name TEXT NOT NULL,
   email TEXT,
-  role TEXT NOT NULL CHECK(role IN ('super_admin', 'employee_orders', 'employee_tracking')),
+  role TEXT NOT NULL CHECK(role IN ('super_admin', 'employee_orders', 'employee_tracking', 'crm_employee')),
   role_label TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'suspended')),
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -93,5 +94,7 @@ CREATE TABLE IF NOT EXISTS ledger (
   amount REAL NOT NULL DEFAULT 0,
   date TEXT NOT NULL,
   reference TEXT DEFAULT '',
-  created_at TEXT DEFAULT (datetime('now'))
+  created_by INTEGER,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (created_by) REFERENCES users(id)
 );

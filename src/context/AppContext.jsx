@@ -104,6 +104,8 @@ function appReducer(state, action) {
 
         case 'ADD_LEDGER_ENTRY':
             return { ...state, ledger: [action.payload, ...state.ledger] };
+        case 'UPDATE_LEDGER_ENTRY':
+            return { ...state, ledger: state.ledger.map(l => l.id === action.payload.id ? { ...l, ...action.payload } : l) };
         case 'DELETE_LEDGER_ENTRY':
             return { ...state, ledger: state.ledger.filter(l => l.id !== action.payload) };
         case 'REPLACE_LEDGER':
@@ -296,7 +298,7 @@ export function AppProvider({ children }) {
     // ====== LEDGER (Optimistic) ======
     const addLedgerEntry = useCallback((data) => {
         const tempId = nextTempId();
-        const optimistic = { ...data, id: tempId, reference: data.reference || '' };
+        const optimistic = { ...data, id: tempId, reference: data.reference || '', created_by: data.createdBy };
         dispatch({ type: 'ADD_LEDGER_ENTRY', payload: optimistic });
 
         api('/ledger', { method: 'POST', body: data })
@@ -304,6 +306,11 @@ export function AppProvider({ children }) {
             .catch(() => dispatch({ type: 'DELETE_LEDGER_ENTRY', payload: tempId }));
 
         return optimistic;
+    }, []);
+
+    const updateLedgerEntry = useCallback((data) => {
+        dispatch({ type: 'UPDATE_LEDGER_ENTRY', payload: data });
+        api(`/ledger/${data.id}`, { method: 'PUT', body: data }).catch(console.error);
     }, []);
 
     const deleteLedgerEntry = useCallback((id) => {
@@ -366,6 +373,7 @@ export function AppProvider({ children }) {
         updateOrder,
         deleteOrder,
         addLedgerEntry,
+        updateLedgerEntry,
         deleteLedgerEntry,
         addCrmLead,
         updateCrmLead,

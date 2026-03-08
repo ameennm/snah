@@ -349,7 +349,12 @@ export default {
             // ====== LEDGER ======
             if (path === '/api/ledger' && method === 'GET') {
                 const { results } = await env.DB.prepare('SELECT * FROM ledger ORDER BY date DESC, id DESC').all();
-                return json(results);
+                return json(results.map(l => ({
+                    id: l.id, type: l.type, category: l.category,
+                    description: l.description, amount: l.amount,
+                    date: l.date, reference: l.reference,
+                    created_by: l.created_by,
+                })));
             }
 
             if (path === '/api/ledger' && method === 'POST') {

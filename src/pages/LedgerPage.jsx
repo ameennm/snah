@@ -1,24 +1,39 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Modal from '../components/Modal';
-import { FiPlus, FiSearch, FiTrash2, FiArrowUpRight, FiArrowDownLeft } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiTrash2, FiEdit2, FiArrowUpRight, FiArrowDownLeft } from 'react-icons/fi';
 
 export default function LedgerPage() {
-    const { ledger, hasPermission, addLedgerEntry, deleteLedgerEntry } = useApp();
+    const { ledger, user, hasPermission, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry } = useApp();
+    const isAdmin = user?.role === 'super_admin';
+
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
     const [showAdd, setShowAdd] = useState(false);
-    const [form, setForm] = useState({
+    const [editEntry, setEditEntry] = useState(null); // null = adding new, otherwise editing existing
+
+    const blankForm = {
         type: 'expense',
         category: '',
         description: '',
         amount: '',
         date: new Date().toISOString().split('T')[0],
         reference: '',
-    });
+    };
+    const [form, setForm] = useState(blankForm);
 
+    const expenseCategories = [
+        'Rent', 'Salary', 'Utilities', 'Shipping', 'Packaging',
+        'Marketing', 'Maintenance', 'Office Supplies', 'Travel', 'Other',
+    ];
+    const incomeCategories = [
+        'Sales', 'Refund Received', 'Interest', 'Commission', 'Other Income',
+    ];
+
+    // Filter: employees see only their own entries
     const filtered = ledger
         .filter((entry) => {
+            if (!isAdmin && entry.created_by !== user?.id) return false;
             const matchesSearch =
                 entry.description.toLowerCase().includes(search.toLowerCase()) ||
                 entry.category.toLowerCase().includes(search.toLowerCase()) ||
@@ -28,34 +43,65 @@ export default function LedgerPage() {
         })
         .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    const totalIncome = filtered
-        .filter((e) => e.type === 'income')
-        .reduce((sum, e) => sum + e.amount, 0);
-    const totalExpense = filtered
-        .filter((e) => e.type === 'expense')
-        .reduce((sum, e) => sum + e.amount, 0);
+    const totalIncome = filtered.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+    const totalExpense = filtered.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
     const netBalance = totalIncome - totalExpense;
     const isFiltered = search || typeFilter !== 'all';
 
+    // Running balance (chronological)
+    const sortedForBalance = [...filtered].sort((a, b) => new Date(a.date) - new Date(b.date));
+    let runningBalance = 0;
+    const balanceMap = {};
+    sortedForBalance.forEach((entry) => {
+        runningBalance += entry.type === 'income' ? entry.amount : -entry.amount;
+        balanceMap[entry.id] = runningBalance;
+    });
+
     const openAdd = (type = 'expense') => {
-        setForm({
-            type,
-            category: '',
-            description: '',
-            amount: '',
-            date: new Date().toISOString().split('T')[0],
-            reference: '',
-        });
+        setForm({ ...blankForm, type });
+        setEditEntry(null);
         setShowAdd(true);
+    };
+
+    const openEdit = (entry) => {
+        setForm({
+            type: entry.type,
+            category: entry.category,
+            description: entry.description,
+            amount: String(entry.amount),
+            date: entry.date,
+            reference: entry.reference || '',
+        });
+        setEditEntry(entry);
+        setShowAdd(true);
+    };
+
+    const closeModal = () => {
+        setShowAdd(false);
+        setEditEntry(null);
+        setForm(blankForm);
     };
 
     const handleSave = () => {
         if (!form.category || !form.amount || !form.description) return;
-        addLedgerEntry({
-            ...form,
-            amount: Number(form.amount),
-        });
-        setShowAdd(false);
+
+        if (editEntry) {
+            // Update existing entry
+            updateLedgerEntry({
+                ...editEntry,
+                ...form,
+                amount: Number(form.amount),
+                updatedBy: user?.id,
+            });
+        } else {
+            // Create new entry
+            addLedgerEntry({
+                ...form,
+                amount: Number(form.amount),
+                createdBy: user?.id,
+            });
+        }
+        closeModal();
     };
 
     const handleDelete = (id) => {
@@ -67,27 +113,15 @@ export default function LedgerPage() {
     const formatCurrency = (val) =>
         '₹' + Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    const expenseCategories = [
-        'Rent', 'Salary', 'Utilities', 'Shipping', 'Packaging',
-        'Marketing', 'Maintenance', 'Office Supplies', 'Travel', 'Other',
-    ];
+    // Can employee edit this entry? Only their own.
+    const canEdit = (entry) => isAdmin || entry.created_by === user?.id;
 
-    const incomeCategories = [
-        'Sales', 'Refund Received', 'Interest', 'Commission', 'Other Income',
-    ];
+    const modalTitle = editEntry
+        ? `Edit ${editEntry.type === 'income' ? 'Income' : 'Expense'}`
+        : (form.type === 'income' ? 'Add Income' : 'Add Expense');
 
-    // Running balance
-    const sortedForBalance = [...filtered].sort((a, b) => new Date(a.date) - new Date(b.date));
-    let runningBalance = 0;
-    const balanceMap = {};
-    sortedForBalance.forEach((entry) => {
-        if (entry.type === 'income') {
-            runningBalance += entry.amount;
-        } else {
-            runningBalance -= entry.amount;
-        }
-        balanceMap[entry.id] = runningBalance;
-    });
+    const saveLabel = editEntry ? 'Save Changes' : (form.type === 'income' ? 'Add Income' : 'Add Expense');
+    const saveBtnClass = (form.type === 'income' && !editEntry) ? 'btn-success' : (editEntry ? 'btn-primary' : 'btn-danger');
 
     return (
         <>
@@ -150,11 +184,14 @@ export default function LedgerPage() {
                             <option value="income">Income</option>
                             <option value="expense">Expense</option>
                         </select>
-                        {hasPermission('dashboard') && (
+                        {/* Admin: Add Income + Add Expense. Employee: Add Expense only */}
+                        {(isAdmin || hasPermission('ledger')) && (
                             <>
-                                <button className="btn btn-success" onClick={() => openAdd('income')} id="add-income-btn">
-                                    <FiArrowDownLeft /> Add Income
-                                </button>
+                                {isAdmin && (
+                                    <button className="btn btn-success" onClick={() => openAdd('income')} id="add-income-btn">
+                                        <FiArrowDownLeft /> Add Income
+                                    </button>
+                                )}
                                 <button className="btn btn-danger" onClick={() => openAdd('expense')} id="add-expense-btn">
                                     <FiArrowUpRight /> Add Expense
                                 </button>
@@ -173,7 +210,7 @@ export default function LedgerPage() {
                                 <th>Reference</th>
                                 <th>Amount</th>
                                 <th>Balance</th>
-                                {hasPermission('dashboard') && <th>Actions</th>}
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -181,58 +218,71 @@ export default function LedgerPage() {
                                 <tr key={entry.id}>
                                     <td data-label="Date">
                                         {new Date(entry.date).toLocaleDateString('en-IN', {
-                                            day: '2-digit',
-                                            month: 'short',
-                                            year: 'numeric',
+                                            day: '2-digit', month: 'short', year: 'numeric',
                                         })}
                                     </td>
                                     <td data-label="Type">
-                                        <span
-                                            className={`badge ${entry.type === 'income' ? 'badge-paid' : 'badge-unpaid'}`}
-                                        >
+                                        <span className={`badge ${entry.type === 'income' ? 'badge-paid' : 'badge-unpaid'}`}>
                                             {entry.type === 'income' ? '↓ Income' : '↑ Expense'}
                                         </span>
                                     </td>
                                     <td data-label="Category">{entry.category}</td>
                                     <td data-label="Description">{entry.description}</td>
                                     <td data-label="Reference" className="font-mono text-muted">{entry.reference || '—'}</td>
-                                    <td data-label="Amount"
-                                        className={`font-bold ${entry.type === 'income' ? 'text-success' : 'text-danger'
-                                            }`}
+                                    <td
+                                        data-label="Amount"
+                                        className={`font-bold ${entry.type === 'income' ? 'text-success' : 'text-danger'}`}
                                     >
                                         {entry.type === 'income' ? '+' : '-'} {formatCurrency(entry.amount)}
                                     </td>
-                                    <td data-label="Balance"
+                                    <td
+                                        data-label="Balance"
                                         className="font-bold"
                                         style={{
-                                            color:
-                                                (balanceMap[entry.id] || 0) >= 0
-                                                    ? 'var(--success-600)'
-                                                    : 'var(--danger-600)',
+                                            color: (balanceMap[entry.id] || 0) >= 0
+                                                ? 'var(--success-600)'
+                                                : 'var(--danger-600)',
                                         }}
                                     >
                                         {formatCurrency(balanceMap[entry.id] || 0)}
                                     </td>
-                                    {hasPermission('dashboard') && (
-                                        <td data-label="Actions">
-                                            <button
-                                                className="btn btn-secondary btn-sm btn-icon"
-                                                title="Delete"
-                                                onClick={() => handleDelete(entry.id)}
-                                            >
-                                                <FiTrash2 size={14} />
-                                            </button>
-                                        </td>
-                                    )}
+                                    <td data-label="Actions">
+                                        <div className="flex gap-8">
+                                            {/* Edit: admin can edit all; employee can edit own */}
+                                            {canEdit(entry) && (
+                                                <button
+                                                    className="btn btn-secondary btn-sm btn-icon"
+                                                    title="Edit"
+                                                    onClick={() => openEdit(entry)}
+                                                >
+                                                    <FiEdit2 size={14} />
+                                                </button>
+                                            )}
+                                            {/* Delete: admin only */}
+                                            {isAdmin && (
+                                                <button
+                                                    className="btn btn-secondary btn-sm btn-icon"
+                                                    title="Delete"
+                                                    onClick={() => handleDelete(entry.id)}
+                                                >
+                                                    <FiTrash2 size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                             {filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={hasPermission('dashboard') ? 8 : 7}>
+                                    <td colSpan={8}>
                                         <div className="empty-state">
                                             <div className="empty-state-icon">📒</div>
                                             <h3>No entries found</h3>
-                                            <p>Add income or expense entries to track your finances</p>
+                                            <p>
+                                                {isAdmin
+                                                    ? 'Add income or expense entries to track your finances'
+                                                    : 'You have not added any expense entries yet'}
+                                            </p>
                                         </div>
                                     </td>
                                 </tr>
@@ -242,36 +292,40 @@ export default function LedgerPage() {
                 </div>
             </div>
 
-            {/* Add Entry Modal */}
+            {/* Add / Edit Entry Modal */}
             {showAdd && (
                 <Modal
-                    title={form.type === 'income' ? 'Add Income' : 'Add Expense'}
-                    onClose={() => setShowAdd(false)}
+                    title={modalTitle}
+                    onClose={closeModal}
                     footer={
                         <>
-                            <button className="btn btn-secondary" onClick={() => setShowAdd(false)}>
+                            <button className="btn btn-secondary" onClick={closeModal}>
                                 Cancel
                             </button>
                             <button
-                                className={`btn ${form.type === 'income' ? 'btn-success' : 'btn-danger'}`}
+                                className={`btn ${saveBtnClass}`}
                                 onClick={handleSave}
                                 id="save-ledger-btn"
+                                disabled={!form.category || !form.amount || !form.description}
                             >
-                                {form.type === 'income' ? 'Add Income' : 'Add Expense'}
+                                {saveLabel}
                             </button>
                         </>
                     }
                 >
-                    <div className="form-group">
-                        <label>Type</label>
-                        <select
-                            value={form.type}
-                            onChange={(e) => setForm({ ...form, type: e.target.value, category: '' })}
-                        >
-                            <option value="income">Income</option>
-                            <option value="expense">Expense</option>
-                        </select>
-                    </div>
+                    {/* Type selector — admin only; employees always create expense */}
+                    {isAdmin && !editEntry && (
+                        <div className="form-group">
+                            <label>Type</label>
+                            <select
+                                value={form.type}
+                                onChange={(e) => setForm({ ...form, type: e.target.value, category: '' })}
+                            >
+                                <option value="income">Income</option>
+                                <option value="expense">Expense</option>
+                            </select>
+                        </div>
+                    )}
 
                     <div className="form-group">
                         <label>Category *</label>
@@ -281,9 +335,7 @@ export default function LedgerPage() {
                         >
                             <option value="">Select category</option>
                             {(form.type === 'income' ? incomeCategories : expenseCategories).map((cat) => (
-                                <option key={cat} value={cat}>
-                                    {cat}
-                                </option>
+                                <option key={cat} value={cat}>{cat}</option>
                             ))}
                         </select>
                     </div>
