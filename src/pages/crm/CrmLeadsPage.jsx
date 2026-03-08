@@ -45,6 +45,19 @@ export default function CrmLeadsPage() {
     }, [crmLeads, search, statusFilter, payFilter, starredOnly, sortBy]);
 
     const handleSave = (data) => {
+        // Duplicate mobile number check (only when creating a new lead)
+        if (!editingLead) {
+            const normalizedNew = (data.whatsapp || '').replace(/\s+/g, '').replace(/^\+/, '');
+            const duplicate = crmLeads.find(l => {
+                const normalizedExisting = (l.whatsapp || '').replace(/\s+/g, '').replace(/^\+/, '');
+                return normalizedExisting && normalizedExisting === normalizedNew;
+            });
+            if (duplicate) {
+                showToast(`❌ A lead with mobile ${data.whatsapp} already exists (${duplicate.name})`, 'error');
+                return;
+            }
+        }
+
         if (editingLead) { updateCrmLead({ ...editingLead, ...data }); showToast('Lead updated!'); }
         else { addCrmLead(data); showToast('Lead added!'); }
         setShowModal(false); setEditingLead(null);
@@ -242,7 +255,7 @@ export default function CrmLeadsPage() {
                 </>
             )}
 
-            {showModal && <CrmLeadModal lead={editingLead} onClose={() => { setShowModal(false); setEditingLead(null); }} onSave={handleSave} />}
+            {showModal && <CrmLeadModal lead={editingLead} onClose={() => { setShowModal(false); setEditingLead(null); }} onSave={handleSave} crmLeads={crmLeads} />}
             {viewingLead && <CrmLeadDetailModal lead={crmLeads.find(l => l.id === viewingLead.id) || viewingLead} onClose={() => setViewingLead(null)} onUpdate={(data) => { updateCrmLead({ ...viewingLead, ...data }); showToast('Lead updated!'); setViewingLead(null); }} />}
             {deletingId && <CrmConfirmDialog message="Delete this lead? This cannot be undone." onConfirm={() => handleDelete(deletingId)} onCancel={() => setDeletingId(null)} />}
         </div>
