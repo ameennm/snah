@@ -23,6 +23,9 @@ export default function OrdersPage() {
     const [showReturnModal, setShowReturnModal] = useState(null);
     const [returnReason, setReturnReason] = useState('');
 
+    // Delete Modal
+    const [showDeleteModal, setShowDeleteModal] = useState(null);
+
     // Delivery Partners
     const [deliveryPartners, setDeliveryPartners] = useState([]);
 
@@ -295,9 +298,16 @@ export default function OrdersPage() {
     };
 
     const handleDeleteOrder = (orderId) => {
-        if (window.confirm('Are you sure you want to delete this order? Stock will be restored.')) {
-            deleteOrder(orderId);
-            setViewOrder(null);
+        setShowDeleteModal(orderId);
+    };
+
+    const confirmDeleteOrder = () => {
+        if (showDeleteModal) {
+            deleteOrder(showDeleteModal);
+            if (viewOrder && viewOrder.id === showDeleteModal) {
+                setViewOrder(null);
+            }
+            setShowDeleteModal(null);
         }
     };
 
@@ -576,6 +586,25 @@ export default function OrdersPage() {
                     <div className="form-group">
                         <label>New Amount Received (₹)</label>
                         <input type="number" value={paymentInput} onChange={(e) => setPaymentInput(e.target.value)} min="0" />
+                    </div>
+                </Modal>
+            )}
+
+            {/* ===== Delete Order Modal ===== */}
+            {showDeleteModal && (
+                <Modal
+                    title="Confirm Delete"
+                    onClose={() => setShowDeleteModal(null)}
+                    footer={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setShowDeleteModal(null)}>Cancel</button>
+                            <button className="btn btn-primary" style={{ background: 'var(--danger-600)', borderColor: 'var(--danger-600)', color: 'white' }} onClick={confirmDeleteOrder}>Delete Order</button>
+                        </>
+                    }
+                >
+                    <div style={{ padding: '10px 0' }}>
+                        <p>Are you sure you want to delete order <strong>{showDeleteModal}</strong>?</p>
+                        <p style={{ marginTop: '10px', fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>This action cannot be undone. Product stock for this order will be automatically restored.</p>
                     </div>
                 </Modal>
             )}
