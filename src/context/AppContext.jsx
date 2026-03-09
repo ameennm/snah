@@ -279,15 +279,28 @@ export function AppProvider({ children }) {
     }, []);
 
     const updateOrder = useCallback((id, data) => {
-        dispatch({ type: 'UPDATE_ORDER', payload: { id, ...data } });
+        return new Promise((resolve, reject) => {
+            dispatch({ type: 'UPDATE_ORDER', payload: { id, ...data } });
 
-        // If returning, also restore stock optimistically
-        if (data.status === 'returned') {
-            dispatch({ type: 'RETURN_ORDER_STOCK', payload: id });
-            data.restoreStock = true;
-        }
+            // If returning, also restore stock optimistically
+            if (data.status === 'returned') {
+                dispatch({ type: 'RETURN_ORDER_STOCK', payload: id });
+                data.restoreStock = true;
+            }
 
-        api(`/orders/${id}`, { method: 'PUT', body: data }).catch(console.error);
+            api(`/orders/${id}`, { method: 'PUT', body: data })
+                .then(res => {
+                    if (res.newId && res.newId !== id) {
+                        // Create a modified copy with newId 
+                        dispatch({ type: 'REPLACE_ORDER', payload: { tempId: id, real: { id: res.newId } } });
+                    }
+                    resolve(res);
+                })
+                .catch(err => {
+                    console.error('Update order failed:', err);
+                    reject(err);
+                });
+        });
     }, []);
 
     const deleteOrder = useCallback((id) => {

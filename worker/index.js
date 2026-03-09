@@ -300,8 +300,61 @@ export default {
                 if (body.deliveryPartner !== undefined) { updates.push('delivery_partner = ?'); values.push(body.deliveryPartner); }
                 if (body.trackingLink !== undefined) { updates.push('tracking_link = ?'); values.push(body.trackingLink); }
 
+                let newId = id;
+                if (body.createdAt !== undefined) {
+                    updates.push('created_at = ?'); values.push(body.createdAt);
+
+                    // Check if order ID needs to be updated to match the new date format
+                    const orderDateStr = new Date(body.createdAt);
+                    const dd = String(orderDateStr.getDate()).padStart(2, '0');
+                    const mm = String(orderDateStr.getMonth() + 1).padStart(2, '0');
+                    const yyyy = orderDateStr.getFullYear();
+                    const newDatePrefix = `${dd}-${mm}-${yyyy}`;
+
+                    if (!id.startsWith(newDatePrefix)) {
+                        // Find the highest sequence number for the new date prefix
+                        const maxResult = await env.DB.prepare(
+                            "SELECT MAX(CAST(SUBSTR(id, 12) AS INTEGER)) as mx FROM orders WHERE id LIKE ?"
+                        ).bind(`${newDatePrefix}-%`).first();
+                        const nextNum = (maxResult && maxResult.mx) ? maxResult.mx + 1 : 1;
+                        newId = `${newDatePrefix}-${String(nextNum).padStart(3, '0')}`;
+
+                        updates.push('id = ?'); values.push(newId);
+                    }
+                }
+
                 if (body.returnReason !== undefined) { updates.push('return_reason = ?'); values.push(body.returnReason); }
                 if (body.isRedispatched !== undefined) { updates.push('is_redispatched = ?'); values.push(body.isRedispatched ? 1 : 0); }
+
+                if (body.customerId !== undefined) { updates.push('customer_id = ?'); values.push(body.customerId); }
+                if (body.subtotal !== undefined) { updates.push('subtotal = ?'); values.push(body.subtotal); }
+                if (body.discount !== undefined) { updates.push('discount = ?'); values.push(body.discount); }
+                if (body.discountType !== undefined) { updates.push('discount_type = ?'); values.push(body.discountType); }
+                if (body.gstAmount !== undefined) { updates.push('gst_amount = ?'); values.push(body.gstAmount); }
+                if (body.total !== undefined) { updates.push('total = ?'); values.push(body.total); }
+
+                // If items are provided, replace them
+                if (body.items !== undefined) {
+                    // Restore old stock
+                    const { results: oldItems } = await env.DB.prepare(
+                        'SELECT product_id, quantity FROM order_items WHERE order_id = ?'
+                    ).bind(id).all();
+                    for (const item of oldItems) {
+                        await env.DB.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').bind(item.quantity, item.product_id).run();
+                    }
+                    // Delete old items
+                    await env.DB.prepare('DELETE FROM order_items WHERE order_id = ?').bind(id).run();
+                    // Insert new items and reduce stock
+                    for (const item of body.items) {
+                        await env.DB.prepare(
+                            'INSERT INTO order_items (order_id, product_id, quantity, price, gst) VALUES (?, ?, ?, ?, ?)'
+                        ).bind(id, item.productId, item.quantity, item.price, item.gst).run();
+
+                        await env.DB.prepare(
+                            'UPDATE products SET stock = stock - ? WHERE id = ?'
+                        ).bind(item.quantity, item.productId).run();
+                    }
+                }
 
                 // If status is "returned", restore stock
                 if (body.status === 'returned' && body.restoreStock) {
@@ -317,12 +370,23 @@ export default {
                     values.push(id);
                     await env.DB.prepare(`UPDATE orders SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
 
+                    // If ID changed, update related order_items and activity logs
+                    if (newId !== id) {
+                        try {
+                            await env.DB.prepare('UPDATE order_items SET order_id = ? WHERE order_id = ?').bind(newId, id).run();
+                            await env.DB.prepare('UPDATE activity_logs SET entity_id = ? WHERE entity = ? AND entity_id = ?').bind(newId, 'order', id).run();
+                        } catch (e) {
+                            console.error('Failed to update related records for new order ID:', e);
+                        }
+                    }
+
                     let logStr = `Updated order ${id}`;
+                    if (newId !== id) logStr += ` to ${newId}`;
                     if (body.status) logStr += `, status=${body.status}`;
                     if (body.trackingId) logStr += `, trackingId=${body.trackingId}`;
-                    await logActivity(env, body.updatedBy, 'update', 'order', id, logStr);
+                    await logActivity(env, body.updatedBy, 'update', 'order', newId, logStr);
                 }
-                return json({ success: true, autoShipped: setStatusToShipped });
+                return json({ success: true, autoShipped: setStatusToShipped, newId: newId });
             }
 
             if (path.startsWith('/api/orders/') && method === 'DELETE') {

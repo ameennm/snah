@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
-import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus, FiDollarSign, FiMessageCircle, FiTruck, FiRefreshCcw } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus, FiDollarSign, FiMessageCircle, FiTruck, FiRefreshCcw, FiEdit } from 'react-icons/fi';
 
 export default function OrdersPage() {
     const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomerAsync, addOrder, updateOrder, deleteOrder, api } = useApp();
@@ -11,6 +11,7 @@ export default function OrdersPage() {
     const [search, setSearch] = useState('');
     const [showCreate, setShowCreate] = useState(false);
     const [viewOrder, setViewOrder] = useState(null);
+    const [editOrderId, setEditOrderId] = useState(null);
     const [paymentFilter, setPaymentFilter] = useState('all');
     const [showPaymentModal, setShowPaymentModal] = useState(null);
     const [paymentInput, setPaymentInput] = useState('');
@@ -137,6 +138,7 @@ export default function OrdersPage() {
         setDiscount(''); setDiscountType('flat');
         setOrderDate(new Date().toISOString().split('T')[0]);
         setTrackingId(''); setNewDeliveryPartner('');
+        setEditOrderId(null);
         setShowCreate(false);
     };
 
@@ -176,29 +178,37 @@ export default function OrdersPage() {
                 customerId = realCustomer.id;
             }
 
-            // Close modal immediately — order appears in list right away (optimistic)
+            // Close modal immediately
             resetForm();
             setViewOrder(null);
 
-            // Fire-and-forget: addOrder optimistically updates state, syncs to DB in background
-            addOrder({
+            const payload = {
                 customerId, items, subtotal, gstAmount: gstTotal, total,
                 discount: discount || 0, discountType,
-                paymentStatus, paidAmount, createdBy: user.id,
+                paymentStatus, paidAmount,
                 trackingId: trackingId.trim() || '',
                 deliveryPartner: newDeliveryPartner || '',
                 trackingLink: getTrackingLink(newDeliveryPartner),
-                createdAt: orderDate ? new Date(orderDate).toISOString() : new Date().toISOString(),
-                isRedispatched: !!(isRedispatch && redispatchOrder),
-                redispatchedFromId: isRedispatch && redispatchOrder ? redispatchOrder.id : null
-            }).then(() => {
-                if (isRedispatch && redispatchOrder) {
-                    updateOrder(redispatchOrder.id, { isRedispatched: true });
-                }
-            }).catch(error => {
-                console.error('Order sync failed:', error);
-                alert('Order could not be saved to server. Please refresh and try again.');
-            });
+                createdAt: orderDate ? new Date(orderDate).toISOString() : new Date().toISOString()
+            };
+
+            if (editOrderId) {
+                updateOrder(editOrderId, { ...payload, updatedBy: user.id });
+            } else {
+                addOrder({
+                    ...payload,
+                    createdBy: user.id,
+                    isRedispatched: !!(isRedispatch && redispatchOrder),
+                    redispatchedFromId: isRedispatch && redispatchOrder ? redispatchOrder.id : null
+                }).then(() => {
+                    if (isRedispatch && redispatchOrder) {
+                        updateOrder(redispatchOrder.id, { isRedispatched: true });
+                    }
+                }).catch(error => {
+                    console.error('Order sync failed:', error);
+                    alert('Order could not be saved to server. Please refresh and try again.');
+                });
+            }
 
         } catch (error) {
             console.error(error);
@@ -315,6 +325,29 @@ export default function OrdersPage() {
         setDiscount(order.discount || '');
         setDiscountType(order.discountType || 'flat');
         setPaymentStatus('not_paid');
+        setEditOrderId(null);
+        setShowCreate(true);
+    };
+
+    const openEdit = (order) => {
+        const cust = getCustomerById(order.customerId);
+        if (cust) {
+            setCustomerName(cust.name);
+            setCustomerPhone(cust.phone.slice(-10));
+            setCountryCode('91');
+            setCustomerAddress(cust.address);
+            setCustomerArea(cust.area);
+        }
+        setOrderItems(order.items.map(i => ({ productId: String(i.productId), quantity: i.quantity })));
+        setDiscount(order.discount || '');
+        setDiscountType(order.discountType || 'flat');
+        setPaymentStatus(order.paymentStatus || 'not_paid');
+        setTrackingId(order.trackingId || '');
+        setNewDeliveryPartner(order.deliveryPartner || '');
+        if (order.createdAt) {
+            setOrderDate(new Date(order.createdAt).toISOString().split('T')[0]);
+        }
+        setEditOrderId(order.id);
         setShowCreate(true);
     };
 
@@ -453,6 +486,11 @@ export default function OrdersPage() {
                                                 <button className="btn btn-secondary btn-sm btn-icon" title="View" onClick={() => setViewOrder(order)}>
                                                     <FiEye size={14} />
                                                 </button>
+                                                {(hasPermission('dashboard') || user.id === order.createdBy) && (
+                                                    <button className="btn btn-secondary btn-sm btn-icon" title="Edit" onClick={() => openEdit(order)}>
+                                                        <FiEdit size={14} />
+                                                    </button>
+                                                )}
                                                 {hasPermission('dashboard') && (
                                                     <button className="btn btn-secondary btn-sm btn-icon border-danger-light text-danger" title="Delete" onClick={() => handleDeleteOrder(order.id)}>
                                                         <FiTrash2 size={14} />
@@ -541,17 +579,17 @@ export default function OrdersPage() {
                 </Modal>
             )}
 
-            {/* ===== Create Order Modal ===== */}
+            {/* ===== Create/Edit Order Modal ===== */}
             {showCreate && (
                 <Modal
-                    title="Create New Order"
+                    title={editOrderId ? "Edit Order" : "Create New Order"}
                     onClose={resetForm}
                     footer={
                         <>
                             <button className="btn btn-secondary" onClick={resetForm}>Cancel</button>
                             <button className="btn btn-primary" onClick={() => handleCreateOrder()}
                                 disabled={!(matchedCustomer ? matchedCustomer.name : customerName) || !customerPhone || orderItems.filter(i => i.productId).length === 0} id="submit-order-btn">
-                                Create Order — {formatCurrency(total)}
+                                {editOrderId ? `Save Order — ${formatCurrency(total)}` : `Create Order — ${formatCurrency(total)}`}
                             </button>
                         </>
                     }
