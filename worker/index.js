@@ -315,9 +315,9 @@ export default {
 
                     // Check if order ID needs to be updated to match the new date format
                     const orderDateStr = new Date(body.createdAt);
-                    const dd = String(orderDateStr.getDate()).padStart(2, '0');
-                    const mm = String(orderDateStr.getMonth() + 1).padStart(2, '0');
-                    const yyyy = orderDateStr.getFullYear();
+                    const dd = String(orderDateStr.getUTCDate()).padStart(2, '0');
+                    const mm = String(orderDateStr.getUTCMonth() + 1).padStart(2, '0');
+                    const yyyy = orderDateStr.getUTCFullYear();
                     const newDatePrefix = `${dd}-${mm}-${yyyy}`;
 
                     if (!id.startsWith(newDatePrefix)) {
