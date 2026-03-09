@@ -220,14 +220,24 @@ export default {
             }
 
             if (path === '/api/orders' && method === 'POST') {
-                const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId, trackingId, deliveryPartner, trackingLink } = await request.json();
+                const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId, trackingId, deliveryPartner, trackingLink, createdAt: bodyCreatedAt } = await request.json();
 
-                // Generate date-prefixed order ID in IST (DD-MM-YYYY-NNN, resets each day)
-                const istOffset = 5.5 * 60 * 60000;
-                const istDate = new Date(Date.now() + istOffset);
-                const dd = String(istDate.getUTCDate()).padStart(2, '0');
-                const mm = String(istDate.getUTCMonth() + 1).padStart(2, '0');
-                const yyyy = istDate.getUTCFullYear();
+                let orderDateStr;
+                let createdAt;
+                if (bodyCreatedAt) {
+                    orderDateStr = new Date(bodyCreatedAt);
+                    createdAt = bodyCreatedAt;
+                } else {
+                    const istOffset = 5.5 * 60 * 60000;
+                    orderDateStr = new Date(Date.now() + istOffset);
+                    createdAt = new Date().toISOString();
+                }
+
+                // Make sure to use UTC getters since ISO strings from frontend for dates like "2026-03-01" are in UTC midnight
+                // For Date.now() + istOffset, the "UTC" getters represent the IST time if we don't adjust it back.
+                const dd = String(bodyCreatedAt ? orderDateStr.getUTCDate() : orderDateStr.getUTCDate()).padStart(2, '0');
+                const mm = String(bodyCreatedAt ? orderDateStr.getUTCMonth() + 1 : orderDateStr.getUTCMonth() + 1).padStart(2, '0');
+                const yyyy = bodyCreatedAt ? orderDateStr.getUTCFullYear() : orderDateStr.getUTCFullYear();
                 const datePrefix = `${dd}-${mm}-${yyyy}`; // e.g. "07-03-2026"
 
                 // Find the highest sequence number already used today
@@ -238,7 +248,6 @@ export default {
                 const nextNum = (maxResult && maxResult.mx) ? maxResult.mx + 1 : 1;
                 const orderId = `${datePrefix}-${String(nextNum).padStart(3, '0')}`; // e.g. "07-03-2026-001"
 
-                const createdAt = new Date().toISOString();
                 const finalPaidAmount = paymentStatus === 'paid' ? total : (paidAmount || 0);
                 const initialTrackingId = trackingId ? trackingId.trim() : '';
                 // If tracking ID provided at creation time, mark as shipped right away
