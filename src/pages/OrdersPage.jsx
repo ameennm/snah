@@ -84,6 +84,7 @@ export default function OrdersPage() {
             const matchesSearch =
                 o.id.toLowerCase().includes(search.toLowerCase()) ||
                 (customer?.name || '').toLowerCase().includes(search.toLowerCase()) ||
+                (customer?.phone || '').toLowerCase().includes(search.toLowerCase()) ||
                 (o.trackingId || '').toLowerCase().includes(search.toLowerCase());
             const matchesPayment =
                 paymentFilter === 'all' || o.paymentStatus === paymentFilter;
@@ -610,6 +611,10 @@ export default function OrdersPage() {
                         <div className="form-group" style={{ marginTop: '12px' }}>
                             <label>Customer Name *</label>
                             <input value={matchedCustomer ? matchedCustomer.name : customerName} onChange={(e) => setCustomerName(e.target.value)} disabled={!!matchedCustomer} />
+                        </div>
+                        <div className="form-group" style={{ marginTop: '12px' }}>
+                            <label>Location / Area *</label>
+                            <input value={matchedCustomer ? (matchedCustomer.area || matchedCustomer.address) : customerArea} onChange={(e) => setCustomerArea(e.target.value)} disabled={!!matchedCustomer} />
                         </div>
                     </div>
 

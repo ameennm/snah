@@ -145,17 +145,27 @@ export function AppProvider({ children }) {
     const dataLoaded = useRef(false);
 
     useEffect(() => {
-        if (state.user && !dataLoaded.current) {
-            dataLoaded.current = true;
-            loadAllData();
-        }
-        if (!state.user) {
+        let intervalId;
+        if (state.user) {
+            if (!dataLoaded.current) {
+                dataLoaded.current = true;
+                loadAllData();
+            }
+            // Auto refresh every 5 seconds to provide fast data updates
+            intervalId = setInterval(() => {
+                loadAllData(true);
+            }, 5000);
+        } else {
             dataLoaded.current = false;
         }
+
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
     }, [state.user]);
 
-    const loadAllData = async () => {
-        dispatch({ type: 'SET_LOADING', payload: true });
+    const loadAllData = async (isBackground = false) => {
+        if (!isBackground) dispatch({ type: 'SET_LOADING', payload: true });
         try {
             const [customers, products, orders, ledger, crmLeads] = await Promise.all([
                 api('/customers'), api('/products'), api('/orders'), api('/ledger'), api('/crm/leads'),
@@ -168,7 +178,7 @@ export function AppProvider({ children }) {
         } catch (err) {
             console.error('Failed to load data:', err);
         }
-        dispatch({ type: 'SET_LOADING', payload: false });
+        if (!isBackground) dispatch({ type: 'SET_LOADING', payload: false });
     };
 
     // ====== AUTH ======
