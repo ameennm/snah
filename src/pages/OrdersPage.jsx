@@ -492,7 +492,7 @@ export default function OrdersPage() {
                                                         <FiEdit size={14} />
                                                     </button>
                                                 )}
-                                                {hasPermission('dashboard') && (
+                                                {(hasPermission('dashboard') || user.id === order.createdBy) && (
                                                     <button className="btn btn-secondary btn-sm btn-icon border-danger-light text-danger" title="Delete" onClick={() => handleDeleteOrder(order.id)}>
                                                         <FiTrash2 size={14} />
                                                     </button>
