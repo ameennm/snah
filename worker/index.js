@@ -247,7 +247,7 @@ export default {
                 const { results: orders } = await env.DB.prepare('SELECT * FROM orders ORDER BY created_at DESC').all();
                 const { results: allItems } = await env.DB.prepare('SELECT * FROM order_items').all();
                 const mapped = orders.map(o => ({
-                    id: o.id, customerId: o.customer_id, subtotal: o.subtotal,
+                    id: o.id, customerId: o.customer_id, crmLeadId: o.crm_lead_id || null, subtotal: o.subtotal,
                     discount: o.discount || 0, discountType: o.discount_type || 'flat',
                     gstAmount: o.gst_amount, total: o.total, paidAmount: o.paid_amount || 0,
                     paymentStatus: o.payment_status, trackingId: o.tracking_id,
@@ -266,7 +266,7 @@ export default {
             }
 
             if (path === '/api/orders' && method === 'POST') {
-                const { customerId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId, trackingId, deliveryPartner, trackingLink, createdAt: bodyCreatedAt } = await request.json();
+                const { customerId, crmLeadId, items, subtotal, discount, discountType, gstAmount, total, paymentStatus, paidAmount, createdBy, redispatchedFromId, trackingId, deliveryPartner, trackingLink, createdAt: bodyCreatedAt } = await request.json();
 
                 let orderDateStr;
                 let createdAt;
@@ -301,8 +301,8 @@ export default {
                 const shippedDate = initialTrackingId ? createdAt : null;
 
                 await env.DB.prepare(
-                    'INSERT INTO orders (id, customer_id, subtotal, discount, discount_type, gst_amount, total, paid_amount, payment_status, tracking_id, delivery_partner, tracking_link, status, shipped_date, created_at, created_by, is_redispatched, redispatched_from_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                ).bind(orderId, customerId, subtotal, discount || 0, discountType || 'flat', gstAmount, total, finalPaidAmount, paymentStatus, initialTrackingId, deliveryPartner || '', trackingLink || '', initialStatus, shippedDate, createdAt, createdBy, redispatchedFromId ? 1 : 0, redispatchedFromId || null).run();
+                    'INSERT INTO orders (id, customer_id, crm_lead_id, subtotal, discount, discount_type, gst_amount, total, paid_amount, payment_status, tracking_id, delivery_partner, tracking_link, status, shipped_date, created_at, created_by, is_redispatched, redispatched_from_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                ).bind(orderId, customerId, crmLeadId || null, subtotal, discount || 0, discountType || 'flat', gstAmount, total, finalPaidAmount, paymentStatus, initialTrackingId, deliveryPartner || '', trackingLink || '', initialStatus, shippedDate, createdAt, createdBy, redispatchedFromId ? 1 : 0, redispatchedFromId || null).run();
 
                 for (const item of items) {
                     await env.DB.prepare(
@@ -354,6 +354,7 @@ export default {
 
                 if (body.deliveryPartner !== undefined) { updates.push('delivery_partner = ?'); values.push(body.deliveryPartner); }
                 if (body.trackingLink !== undefined) { updates.push('tracking_link = ?'); values.push(body.trackingLink); }
+                if (body.crmLeadId !== undefined) { updates.push('crm_lead_id = ?'); values.push(body.crmLeadId); }
 
                 let newId = id;
                 if (body.createdAt !== undefined) {

@@ -161,6 +161,7 @@ export default function CrmLeadsPage() {
             const subtotal = items.reduce((s, i) => s + i.quantity * i.price, 0);
             await addOrder({
                 customerId: parseInt(customer.id, 10),
+                crmLeadId: lead.id,
                 items, subtotal, gstAmount: 0, total: subtotal,
                 paidAmount: lead.paid_amount || 0,
                 paymentStatus: lead.payment_status === 'paid' ? 'paid' : lead.paid_amount > 0 ? 'partial' : 'not_paid',
