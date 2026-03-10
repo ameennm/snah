@@ -228,6 +228,8 @@ export const PERMISSIONS = {
     createOrder: true,
     addTracking: false,
     sendWhatsApp: false,
+    editAllOrders: true,
+    editAllCustomers: true,
   },
   employee_tracking: {
     dashboard: false,

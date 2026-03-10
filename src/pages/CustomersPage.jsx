@@ -222,7 +222,7 @@ export default function CustomersPage() {
                                                 <button className="btn btn-secondary btn-sm btn-icon" title="View History" onClick={() => setViewHistory(c)}>
                                                     <FiEye size={14} />
                                                 </button>
-                                                {hasPermission('addCustomer') && (
+                                                {(hasPermission('addCustomer') || hasPermission('editAllCustomers')) && (
                                                     <>
                                                         <button className="btn btn-secondary btn-sm btn-icon" title="Edit" onClick={() => openEdit(c)}><FiEdit2 size={14} /></button>
                                                         <button className="btn btn-secondary btn-sm btn-icon" title="Delete" onClick={() => handleDelete(c.id)}><FiTrash2 size={14} /></button>

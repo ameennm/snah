@@ -502,12 +502,12 @@ export default function OrdersPage() {
                                                 <button className="btn btn-secondary btn-sm btn-icon" title="View" onClick={() => setViewOrder(order)}>
                                                     <FiEye size={14} />
                                                 </button>
-                                                {(hasPermission('dashboard') || user.id === order.createdBy) && (
+                                                {(hasPermission('dashboard') || hasPermission('editAllOrders') || Number(user.id) === Number(order.createdBy)) && (
                                                     <button className="btn btn-secondary btn-sm btn-icon" title="Edit" onClick={() => openEdit(order)}>
                                                         <FiEdit size={14} />
                                                     </button>
                                                 )}
-                                                {(hasPermission('dashboard') || user.id === order.createdBy) && (
+                                                {(hasPermission('dashboard') || hasPermission('editAllOrders') || Number(user.id) === Number(order.createdBy)) && (
                                                     <button className="btn btn-secondary btn-sm btn-icon border-danger-light text-danger" title="Delete" onClick={() => handleDeleteOrder(order.id)}>
                                                         <FiTrash2 size={14} />
                                                     </button>
