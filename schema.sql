@@ -9,8 +9,9 @@ CREATE TABLE IF NOT EXISTS users (
   password TEXT NOT NULL,
   name TEXT NOT NULL,
   email TEXT,
-  role TEXT NOT NULL CHECK(role IN ('super_admin', 'employee_orders', 'employee_tracking', 'crm_employee')),
-  role_label TEXT NOT NULL,
+  role TEXT, -- Deprecated, for backward compatibility
+  roles TEXT DEFAULT '[]', -- JSON array of roles e.g. ["employee_orders", "crm_employee"]
+  role_label TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'suspended')),
   created_at TEXT DEFAULT (datetime('now'))
 );
@@ -73,6 +74,8 @@ CREATE TABLE IF NOT EXISTS crm_leads (
   location TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'hot',
   interested_products TEXT DEFAULT '[]',
+  lead_products TEXT DEFAULT '[]',
+  instagram TEXT DEFAULT '',
   amount REAL NOT NULL DEFAULT 0,
   paid_amount REAL DEFAULT 0,
   payment_status TEXT NOT NULL DEFAULT 'pending',
@@ -81,8 +84,19 @@ CREATE TABLE IF NOT EXISTS crm_leads (
   call_notes TEXT DEFAULT '',
   not_interested_reason TEXT DEFAULT '',
   is_starred INTEGER DEFAULT 0,
+  sent_messages TEXT DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by INTEGER,
+  assigned_to INTEGER,
+  is_passed INTEGER DEFAULT 0,
+  passed_from INTEGER,
+  converted INTEGER DEFAULT 0,
+  closer_id INTEGER,
+  FOREIGN KEY (created_by) REFERENCES users(id),
+  FOREIGN KEY (assigned_to) REFERENCES users(id),
+  FOREIGN KEY (passed_from) REFERENCES users(id),
+  FOREIGN KEY (closer_id) REFERENCES users(id)
 );
 
 -- Ledger table

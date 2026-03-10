@@ -36,10 +36,11 @@ export default function Sidebar() {
     const crmPendingCount = leads.filter(l => l.payment_status === 'pending' && l.status !== 'not-interested').length;
     const crmTodayCount = leads.filter(l => l.next_call_date && new Date(l.next_call_date).setHours(0, 0, 0, 0) === todayMidnight && l.status !== 'not-interested').length;
     const crmOverdueCount = leads.filter(l => l.next_call_date && new Date(l.next_call_date).setHours(0, 0, 0, 0) < todayMidnight && l.status !== 'not-interested').length;
+    const crmPassedInCount = leads.filter(l => l.is_passed && l.assigned_to === user?.id).length;
 
     const CRM_NAV = [
         { path: '/crm/dashboard', label: 'CRM Overview', icon: FiPieChart },
-        { path: '/crm/leads', label: 'Leads', icon: FiTarget, badge: crmPendingCount || null, badgeColor: 'orange' },
+        { path: '/crm/leads', label: 'Leads', icon: FiTarget, badge: crmPassedInCount || crmPendingCount || null, badgeColor: crmPassedInCount ? 'red' : 'orange' },
         { path: '/crm/reminders', label: 'Reminders', icon: FiPhone, badge: crmTodayCount || null, badgeColor: 'cyan' },
         { path: '/crm/missed', label: 'Missed Calls', icon: FiPhoneMissed, badge: crmOverdueCount || null, badgeColor: 'red' },
         { path: '/crm/messages', label: 'Messages', icon: FiMessageSquare },

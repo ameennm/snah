@@ -5,7 +5,12 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus, FiDollarSign, FiMessageCircle, FiTruck, FiRefreshCcw, FiEdit } from 'react-icons/fi';
 
 export default function OrdersPage() {
-    const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomerAsync, addOrder, updateOrder, deleteOrder, api } = useApp();
+    const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomerAsync, addOrder, updateOrder, deleteOrder, api, crmLeads } = useApp();
+    const [allUsers, setAllUsers] = useState([]);
+
+    useEffect(() => {
+        api('/users').then(setAllUsers).catch(() => { });
+    }, [api]);
     const location = useLocation();
     const navigate = useNavigate();
     const [search, setSearch] = useState('');
@@ -800,6 +805,12 @@ export default function OrdersPage() {
                             <div className="flex justify-between" style={{ marginBottom: '4px' }}><span>Customer:</span> <strong>{getCustomerById(viewOrder.customerId)?.name}</strong></div>
                             <div className="flex justify-between" style={{ marginBottom: '4px' }}><span>Phone:</span> <span className="font-mono">{getCustomerById(viewOrder.customerId)?.phone}</span></div>
                             <div className="flex justify-between"><span>Date:</span> <span>{formatDate(viewOrder.createdAt)}</span></div>
+                            {viewOrder.closer_id && (
+                                <div className="flex justify-between" style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid var(--gray-100)' }}>
+                                    <span>Closed By:</span>
+                                    <strong>{allUsers.find(u => u.id === viewOrder.closer_id)?.name || 'Unknown'}</strong>
+                                </div>
+                            )}
                         </div>
 
                         {viewOrder.status === 'returned' && viewOrder.returnReason && (

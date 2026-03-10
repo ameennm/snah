@@ -6,7 +6,7 @@ import { FiPlus, FiEdit2, FiTrash2, FiToggleLeft, FiToggleRight } from 'react-ic
 const ROLES = [
     { id: 'employee_orders', label: 'Order Creator' },
     { id: 'employee_tracking', label: 'Tracking Manager' },
-    { id: 'crm_employee', label: 'CRM Executive' },
+    { id: 'crm_em', label: 'CRM Executive' },
 ];
 
 export default function EmployeesPage() {
@@ -14,29 +14,63 @@ export default function EmployeesPage() {
     const [employees, setEmployees] = useState([]);
     const [showModal, setShowModal] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState(null);
-    const [form, setForm] = useState({ username: '', password: '', name: '', email: '', role: 'employee_orders', roleLabel: 'Order Creator' });
+    const [form, setForm] = useState({
+        username: '',
+        password: '',
+        name: '',
+        email: '',
+        role: 'employee_orders',
+        roles: ['employee_orders'],
+        roleLabel: 'Order Creator'
+    });
+
+    const loadEmployees = async () => {
+        try {
+            console.log('[Employees] Loading employees...');
+            const data = await api('/users');
+            console.log('[Employees] Loaded users from API:', data);
+            const filtered = data.filter(u => u.role !== 'super_admin');
+            setEmployees(filtered);
+        } catch (error) {
+            console.error('[Employees] Failed to load employees:', error);
+        }
+    };
 
     useEffect(() => {
         loadEmployees();
     }, []);
 
-    const loadEmployees = async () => {
-        try {
-            const data = await api('/users');
-            setEmployees(data.filter(u => u.role !== 'super_admin'));
-        } catch (error) {
-            console.error('Failed to load employees:', error);
+    useEffect(() => {
+        if (employees.length > 0) {
+            console.log('[Employees] Employee list updated:', employees);
         }
-    };
+    }, [employees]);
 
-    const handleRoleChange = (e) => {
-        const role = e.target.value;
-        const roleLabel = ROLES.find(r => r.id === role)?.label || '';
-        setForm({ ...form, role, roleLabel });
+    const handleRoleToggle = (roleId) => {
+        let newRoles = [...(form.roles || [])];
+        if (newRoles.includes(roleId)) {
+            newRoles = newRoles.filter(r => r !== roleId);
+        } else {
+            newRoles.push(roleId);
+        }
+
+        // Update roleLabel based on selected roles
+        const labels = ROLES.filter(r => newRoles.includes(r.id)).map(r => r.label);
+        const roleLabel = labels.length > 0 ? labels.join(', ') : 'No Access';
+
+        setForm({ ...form, roles: newRoles, roleLabel });
     };
 
     const openAddModal = () => {
-        setForm({ username: '', password: '', name: '', email: '', role: 'employee_orders', roleLabel: 'Order Creator' });
+        setForm({
+            username: '',
+            password: '',
+            name: '',
+            email: '',
+            role: '',
+            roles: [],
+            roleLabel: ''
+        });
         setEditingEmployee(null);
         setShowModal(true);
     };
@@ -52,14 +86,33 @@ export default function EmployeesPage() {
         if (!editingEmployee && !form.password) return alert('Password is required for new employees');
 
         try {
+            const roles = Array.isArray(form.roles) ? form.roles : [];
+            const role = roles.length > 0 ? roles[0] : (form.role || '');
+            const updateData = {
+                username: form.username,
+                name: form.name,
+                email: form.email,
+                role,
+                roles,
+                roleLabel: form.roleLabel,
+                updatedBy: user.id
+            };
+            if (form.password) updateData.password = form.password;
+
+            console.log('[Employees] Saving employee...', {
+                isEdit: !!editingEmployee,
+                id: editingEmployee?.id,
+                payload: updateData
+            });
+
             if (editingEmployee) {
-                const updateData = { ...form };
-                if (!updateData.password) delete updateData.password;
-                updateData.updatedBy = user.id;
-                await api(`/users/${editingEmployee.id}`, { method: 'PUT', body: updateData });
+                const res = await api(`/users/${editingEmployee.id}`, { method: 'PUT', body: updateData });
+                console.log('[Employees] Update response:', res);
             } else {
-                await api('/users', { method: 'POST', body: { ...form, createdBy: user.id } });
+                const res = await api('/users', { method: 'POST', body: { ...updateData, createdBy: user.id } });
+                console.log('[Employees] Create response:', res);
             }
+            console.log('[Employees] Save successful, reloading...');
             setShowModal(false);
             loadEmployees();
         } catch (err) {
@@ -110,9 +163,19 @@ export default function EmployeesPage() {
                                 <td className="font-bold">{emp.name}</td>
                                 <td className="font-mono">{emp.username}</td>
                                 <td>
-                                    <span className="badge" style={{ background: 'var(--primary-100)', color: 'var(--primary-700)' }}>
-                                        {emp.role_label}
-                                    </span>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                        {(emp.roles || []).map(rId => {
+                                            const roleObj = ROLES.find(r => r.id === rId);
+                                            return (
+                                                <span key={rId} className="badge" style={{ background: 'var(--primary-100)', color: 'var(--primary-700)', marginRight: '4px' }}>
+                                                    {roleObj ? roleObj.label : rId}
+                                                </span>
+                                            );
+                                        })}
+                                        {(!emp.roles || emp.roles.length === 0) && (
+                                            <span className="badge badge-secondary">No Roles</span>
+                                        )}
+                                    </div>
                                 </td>
                                 <td>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -165,10 +228,20 @@ export default function EmployeesPage() {
                         <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
                     </div>
                     <div className="form-group">
-                        <label>Role / Access Level *</label>
-                        <select value={form.role} onChange={handleRoleChange}>
-                            {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                        </select>
+                        <label>Roles / Access Level *</label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                            {ROLES.map(r => (
+                                <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 'normal' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={(form.roles || []).includes(r.id)}
+                                        onChange={() => handleRoleToggle(r.id)}
+                                        style={{ width: '18px', height: '18px' }}
+                                    />
+                                    {r.label}
+                                </label>
+                            ))}
+                        </div>
                     </div>
                 </Modal>
             )}

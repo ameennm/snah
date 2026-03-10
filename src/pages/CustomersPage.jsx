@@ -61,7 +61,7 @@ export default function CustomersPage() {
         });
 
         // Sort
-        if (sortBy === 'newest') list = list.reverse(); // Assuming original array is in mostly insertion order, or relying on id
+        if (sortBy === 'newest') list.sort((a, b) => b.id - a.id);
         if (sortBy === 'qty-asc') list.sort((a, b) => customerStats[a.id].totalQty - customerStats[b.id].totalQty);
         if (sortBy === 'qty-desc') list.sort((a, b) => customerStats[b.id].totalQty - customerStats[a.id].totalQty);
         if (sortBy === 'spent-desc') list.sort((a, b) => customerStats[b.id].totalSpent - customerStats[a.id].totalSpent);

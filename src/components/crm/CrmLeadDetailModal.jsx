@@ -13,7 +13,7 @@ function formatCallDate(str) {
     return d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export default function CrmLeadDetailModal({ lead, onClose, onUpdate }) {
+export default function CrmLeadDetailModal({ lead, employees, onClose, onUpdate }) {
     const { products } = useApp();
     const [editing, setEditing] = useState(false);
 
@@ -63,6 +63,14 @@ export default function CrmLeadDetailModal({ lead, onClose, onUpdate }) {
                                 <span className="crm-detail-value">{lead.location}</span>
                             </div>
                         )}
+                        <div className="crm-detail-row" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--gray-50)' }}>
+                            <span className="crm-detail-label">👤 Entered By</span>
+                            <span className="crm-detail-value">{employees?.find(e => Number(e.id) === Number(lead.created_by))?.name || 'System'}</span>
+                        </div>
+                        <div className="crm-detail-row">
+                            <span className="crm-detail-label">📅 Created At</span>
+                            <span className="crm-detail-value">{new Date(lead.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                        </div>
                     </div>
 
                     {/* Products */}

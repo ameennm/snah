@@ -168,7 +168,11 @@ export function AppProvider({ children }) {
         if (!isBackground) dispatch({ type: 'SET_LOADING', payload: true });
         try {
             const [customers, products, orders, ledger, crmLeads] = await Promise.all([
-                api('/customers'), api('/products'), api('/orders'), api('/ledger'), api('/crm/leads'),
+                api('/customers'),
+                api('/products'),
+                api('/orders'),
+                api('/ledger'),
+                api(`/crm/leads?userId=${state.user?.id || ''}&role=${state.user?.role || ''}`),
             ]);
             dispatch({ type: 'SET_CUSTOMERS', payload: customers });
             dispatch({ type: 'SET_PRODUCTS', payload: products });
@@ -201,7 +205,12 @@ export function AppProvider({ children }) {
     const hasPermission = useCallback(
         (perm) => {
             if (!state.user) return false;
-            return PERMISSIONS[state.user.role]?.[perm] ?? false;
+            // Admin has all permissions
+            if (state.user.role === 'super_admin') return true;
+
+            // Check if any assigned role has the permission
+            const roles = state.user.roles || [state.user.role];
+            return roles.some(r => PERMISSIONS[r]?.[perm]);
         },
         [state.user]
     );
@@ -234,8 +243,10 @@ export function AppProvider({ children }) {
 
     const deleteCustomer = useCallback((id) => {
         dispatch({ type: 'DELETE_CUSTOMER', payload: id });
-        api(`/customers/${id}`, { method: 'DELETE' }).catch(console.error);
-    }, []);
+        if (state.user?.id) {
+            api(`/customers/${id}?userId=${state.user.id}`, { method: 'DELETE' }).catch(console.error);
+        }
+    }, [state.user?.id]);
 
     // ====== PRODUCTS (Optimistic) ======
     const addProduct = useCallback((data) => {
@@ -258,8 +269,10 @@ export function AppProvider({ children }) {
 
     const deleteProduct = useCallback((id) => {
         dispatch({ type: 'DELETE_PRODUCT', payload: id });
-        api(`/products/${id}`, { method: 'DELETE' }).catch(console.error);
-    }, []);
+        if (state.user?.id) {
+            api(`/products/${id}?userId=${state.user.id}`, { method: 'DELETE' }).catch(console.error);
+        }
+    }, [state.user?.id]);
 
     // ====== ORDERS (Optimistic) ======
     const addOrder = useCallback((data) => {
@@ -315,8 +328,10 @@ export function AppProvider({ children }) {
 
     const deleteOrder = useCallback((id) => {
         dispatch({ type: 'DELETE_ORDER', payload: id });
-        api(`/orders/${id}`, { method: 'DELETE' }).catch(console.error);
-    }, []);
+        if (state.user?.id) {
+            api(`/orders/${id}?userId=${state.user.id}`, { method: 'DELETE' }).catch(console.error);
+        }
+    }, [state.user?.id]);
 
     // ====== LEDGER (Optimistic) ======
     const addLedgerEntry = useCallback((data) => {
@@ -338,8 +353,10 @@ export function AppProvider({ children }) {
 
     const deleteLedgerEntry = useCallback((id) => {
         dispatch({ type: 'DELETE_LEDGER_ENTRY', payload: id });
-        api(`/ledger/${id}`, { method: 'DELETE' }).catch(console.error);
-    }, []);
+        if (state.user?.id) {
+            api(`/ledger/${id}?userId=${state.user.id}`, { method: 'DELETE' }).catch(console.error);
+        }
+    }, [state.user?.id]);
 
     // ====== CRM LEADS (Optimistic) ======
     const addCrmLead = useCallback((data) => {
@@ -360,8 +377,10 @@ export function AppProvider({ children }) {
 
     const deleteCrmLead = useCallback((id) => {
         dispatch({ type: 'DELETE_CRM_LEAD', payload: id });
-        api(`/crm/leads/${id}`, { method: 'DELETE' }).catch(console.error);
-    }, []);
+        if (state.user?.id) {
+            api(`/crm/leads/${id}?userId=${state.user.id}`, { method: 'DELETE' }).catch(console.error);
+        }
+    }, [state.user?.id]);
 
     // ====== HELPERS ======
     const getCustomerById = useCallback(

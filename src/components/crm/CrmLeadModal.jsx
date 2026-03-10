@@ -112,24 +112,27 @@ export default function CrmLeadModal({ lead, onClose, onSave, crmLeads = [] }) {
     };
 
     // Real-time duplicate check (only for new leads)
-    const isDuplicateWhatsApp = !lead && form.whatsapp.trim() && (() => {
+    const duplicateLead = !lead && form.whatsapp.trim() ? (() => {
         const normalized = form.whatsapp.trim().replace(/\s+/g, '').replace(/^\+/, '');
-        return crmLeads.some(l => {
+        return crmLeads.find(l => {
             const existing = (l.whatsapp || '').replace(/\s+/g, '').replace(/^\+/, '');
             return existing && existing === normalized;
         });
-    })();
+    })() : null;
+
+    const duplicateCreator = duplicateLead ? (allUsers?.find(u => Number(u.id) === Number(duplicateLead.created_by))?.name || 'System') : null;
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!form.name.trim() || !form.whatsapp.trim()) return;
-        if (isDuplicateWhatsApp) return;
+        if (duplicateLead) return;
         const amount = parseFloat(form.amount) || 0;
         const paid = parseFloat(form.paid_amount) || 0;
         const autoPayStatus = paid >= amount && amount > 0 ? 'paid' : (paid > 0 && paid < amount ? 'partial' : form.payment_status);
         const nextCallDate = hasCallDate && callDate ? `${callDate}T${callTime || '17:00'}` : '';
         onSave({ ...(lead || {}), ...form, amount, paid_amount: paid, pending_amount: Math.max(0, amount - paid), payment_status: autoPayStatus, next_call_date: nextCallDate });
     };
+
 
     return (
         <div className="crm-modal-overlay" onClick={onClose}>
@@ -152,13 +155,13 @@ export default function CrmLeadModal({ lead, onClose, onSave, crmLeads = [] }) {
                                 <label>WhatsApp *</label>
                                 <input
                                     type="tel"
-                                    className={`crm-input${isDuplicateWhatsApp ? ' crm-input-error' : ''}`}
+                                    className={`crm-input${duplicateLead ? ' crm-input-error' : ''}`}
                                     placeholder="91XXXXXXXXXX"
                                     value={form.whatsapp}
                                     onChange={e => set('whatsapp', e.target.value)}
                                     required
                                 />
-                                {isDuplicateWhatsApp && (
+                                {duplicateLead && (
                                     <div style={{
                                         marginTop: '0.35rem',
                                         padding: '0.4rem 0.65rem',
@@ -169,9 +172,11 @@ export default function CrmLeadModal({ lead, onClose, onSave, crmLeads = [] }) {
                                         fontSize: '0.78rem',
                                         fontWeight: 500,
                                     }}>
-                                        ⚠️ This mobile number already exists in another lead.
+                                        ⚠️ Mobile number exists in lead: <strong>{duplicateLead.name}</strong><br />
+                                        👤 Created by: <strong>{duplicateCreator}</strong>
                                     </div>
                                 )}
+
                             </div>
                         </div>
                         <div className="crm-form-row">
@@ -340,9 +345,10 @@ export default function CrmLeadModal({ lead, onClose, onSave, crmLeads = [] }) {
                         <button
                             type="submit"
                             className="crm-btn crm-btn-primary"
-                            disabled={!!isDuplicateWhatsApp}
-                            title={isDuplicateWhatsApp ? 'Duplicate mobile number – cannot save' : ''}
+                            disabled={!!duplicateLead}
+                            title={duplicateLead ? 'Duplicate mobile number – cannot save' : ''}
                         >{lead ? 'Save Changes' : 'Add Lead'}</button>
+
                     </div>
                 </form>
             </div>

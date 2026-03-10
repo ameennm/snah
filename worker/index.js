@@ -44,34 +44,64 @@ export default {
             if (path === '/api/login' && method === 'POST') {
                 const { username, password } = await request.json();
                 const user = await env.DB.prepare(
-                    'SELECT id, username, name, email, role, role_label FROM users WHERE username = ? AND password = ?'
+                    'SELECT id, username, name, email, role, roles, role_label, status FROM users WHERE username = ? AND password = ?'
                 ).bind(username, password).first();
                 if (!user) return error('Invalid username or password', 401);
+                if (user.status === 'suspended') return error('Account is suspended', 403);
 
                 await logActivity(env, user.id, 'login', 'user', user.id, 'User logged in');
 
                 return json({
                     success: true,
-                    user: { id: user.id, username: user.username, name: user.name, email: user.email, role: user.role, roleLabel: user.role_label },
+                    user: {
+                        id: user.id,
+                        username: user.username,
+                        name: user.name,
+                        email: user.email,
+                        role: user.role,
+                        roles: (() => {
+                            try {
+                                if (user.roles && user.roles !== '[]') return JSON.parse(user.roles);
+                                return user.role ? [user.role] : [];
+                            } catch (e) {
+                                return user.role ? [user.role] : [];
+                            }
+                        })(),
+                        roleLabel: user.role_label
+                    },
                 });
             }
 
             // ====== USERS ======
             if (path === '/api/users' && method === 'GET') {
-                const { results } = await env.DB.prepare('SELECT id, username, name, email, role, role_label, created_at, status FROM users ORDER BY id DESC').all();
-                return json(results);
+                const { results } = await env.DB.prepare('SELECT id, username, name, email, role, roles, role_label, created_at, status FROM users ORDER BY id DESC').all();
+                return json(results.map(u => {
+                    let parsedRoles = [];
+                    try {
+                        if (u.roles && u.roles !== '[]') {
+                            parsedRoles = JSON.parse(u.roles);
+                        } else if (u.role) {
+                            parsedRoles = [u.role]; // Fallback to legacy role
+                        }
+                    } catch (e) {
+                        console.error('Error parsing roles for user', u.id, e);
+                        if (u.role) parsedRoles = [u.role];
+                    }
+                    return { ...u, roles: parsedRoles };
+                }));
             }
             if (path === '/api/users' && method === 'POST') {
-                const { username, password, name, email, role, roleLabel, createdBy } = await request.json();
+                const { username, password, name, email, role, roles, roleLabel, createdBy } = await request.json();
                 const existing = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
                 if (existing) return error('Username already taken', 400);
 
+                const rolesJson = JSON.stringify(roles || []);
                 const result = await env.DB.prepare(
-                    'INSERT INTO users (username, password, name, email, role, role_label) VALUES (?, ?, ?, ?, ?, ?)'
-                ).bind(username, password, name, email || '', role, roleLabel).run();
+                    'INSERT INTO users (username, password, name, email, role, roles, role_label) VALUES (?, ?, ?, ?, ?, ?, ?)'
+                ).bind(username, password, name, email || '', role || '', rolesJson, roleLabel || '').run();
                 const newId = result.meta.last_row_id;
                 await logActivity(env, createdBy, 'create', 'user', newId, `Created user ${username}`);
-                return json({ id: newId, username, name, email, role, role_label: roleLabel }, 201);
+                return json({ id: newId, username, name, email, role, roles, role_label: roleLabel }, 201);
             }
             if (path.startsWith('/api/users/') && method === 'PUT') {
                 const id = parseInt(path.split('/').pop());
@@ -83,6 +113,17 @@ export default {
                 if (body.username) { updates.push('username = ?'); values.push(body.username); }
                 if (body.email !== undefined) { updates.push('email = ?'); values.push(body.email); }
                 if (body.role) { updates.push('role = ?'); values.push(body.role); }
+                if (body.roles) {
+                    const rolesArray = Array.isArray(body.roles) ? body.roles : [];
+                    updates.push('roles = ?');
+                    values.push(JSON.stringify(rolesArray));
+
+                    // Sync legacy role field with the first role in the array if not explicitly provided
+                    if (!body.role && rolesArray.length > 0) {
+                        updates.push('role = ?');
+                        values.push(rolesArray[0]);
+                    }
+                }
                 if (body.roleLabel) { updates.push('role_label = ?'); values.push(body.roleLabel); }
                 if (body.password) { updates.push('password = ?'); values.push(body.password); }
                 if (body.status) { updates.push('status = ?'); values.push(body.status); }
@@ -159,8 +200,10 @@ export default {
 
             if (path.startsWith('/api/customers/') && method === 'DELETE') {
                 const id = parseInt(path.split('/').pop());
-                // No tracking updatedBy here unless provided as query param or we assume it's super admin
+                const urlParams = new URL(request.url).searchParams;
+                const deletedBy = urlParams.get('userId');
                 await env.DB.prepare('DELETE FROM customers WHERE id = ?').bind(id).run();
+                await logActivity(env, deletedBy, 'delete', 'customer', id, `Deleted customer ${id}`);
                 return json({ success: true });
             }
 
@@ -192,7 +235,10 @@ export default {
 
             if (path.startsWith('/api/products/') && method === 'DELETE') {
                 const id = parseInt(path.split('/').pop());
+                const urlParams = new URL(request.url).searchParams;
+                const deletedBy = urlParams.get('userId');
                 await env.DB.prepare('DELETE FROM products WHERE id = ?').bind(id).run();
+                await logActivity(env, deletedBy, 'delete', 'product', id, `Deleted product ${id}`);
                 return json({ success: true });
             }
 
@@ -443,7 +489,10 @@ export default {
 
             if (path.startsWith('/api/ledger/') && method === 'DELETE') {
                 const id = parseInt(path.split('/').pop());
+                const urlParams = new URL(request.url).searchParams;
+                const deletedBy = urlParams.get('userId');
                 await env.DB.prepare('DELETE FROM ledger WHERE id = ?').bind(id).run();
+                await logActivity(env, deletedBy, 'delete', 'ledger', id, `Deleted ledger entry ${id}`);
                 return json({ success: true });
             }
 
@@ -459,13 +508,30 @@ export default {
 
             // ====== CRM LEADS ======
             if (path === '/api/crm/leads' && method === 'GET') {
-                const { results } = await env.DB.prepare('SELECT * FROM crm_leads ORDER BY created_at DESC').all();
+                const urlParams = new URL(request.url).searchParams;
+                const userId = urlParams.get('userId');
+                const userRole = urlParams.get('role');
+                const isAdmin = userRole === 'super_admin';
+
+                let query = 'SELECT * FROM crm_leads';
+                let values = [];
+
+                if (!isAdmin && userId) {
+                    query += ' WHERE (created_by = ? AND (is_passed = 0 OR is_passed IS NULL)) OR (assigned_to = ? AND is_passed = 1)';
+                    values.push(userId, userId);
+                }
+
+                query += ' ORDER BY created_at DESC';
+
+                const { results } = await env.DB.prepare(query).bind(...values).all();
                 return json(results.map(l => ({
                     ...l,
                     interested_products: (() => { try { return JSON.parse(l.interested_products || '[]'); } catch { return []; } })(),
                     lead_products: (() => { try { return JSON.parse(l.lead_products || '[]'); } catch { return []; } })(),
                     sent_messages: (() => { try { return JSON.parse(l.sent_messages || '[]'); } catch { return []; } })(),
                     is_starred: l.is_starred === 1,
+                    is_passed: l.is_passed === 1,
+                    converted: l.converted === 1,
                 })));
             }
 
@@ -477,8 +543,8 @@ export default {
                 const leadProductsJson = JSON.stringify(body.lead_products || []);
                 const sentMessagesJson = JSON.stringify(body.sent_messages || []);
                 await env.DB.prepare(
-                    `INSERT INTO crm_leads (id, name, whatsapp, location, status, interested_products, lead_products, instagram, amount, paid_amount, payment_status, next_call_date, next_action_message, call_notes, not_interested_reason, is_starred, sent_messages, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                    `INSERT INTO crm_leads (id, name, whatsapp, location, status, interested_products, lead_products, instagram, amount, paid_amount, payment_status, next_call_date, next_action_message, call_notes, not_interested_reason, is_starred, sent_messages, created_at, updated_at, created_by, assigned_to)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                 ).bind(
                     id, body.name, body.whatsapp, body.location || '', body.status || 'hot',
                     productsJson, leadProductsJson, body.instagram || '',
@@ -486,7 +552,7 @@ export default {
                     body.payment_status || 'pending', body.next_call_date || '',
                     body.next_action_message || '', body.call_notes || '',
                     body.not_interested_reason || '', body.is_starred ? 1 : 0,
-                    sentMessagesJson, now, now
+                    sentMessagesJson, now, now, body.createdBy, body.createdBy
                 ).run();
                 await logActivity(env, body.createdBy, 'create', 'crm_lead', id, `Added CRM Lead ${body.name}`);
                 return json({ ...body, id, interested_products: body.interested_products || [], lead_products: body.lead_products || [], sent_messages: body.sent_messages || [], is_starred: !!body.is_starred, created_at: now, updated_at: now }, 201);
@@ -500,7 +566,7 @@ export default {
                 const leadProductsJson2 = JSON.stringify(body.lead_products || []);
                 const sentMessagesJson = JSON.stringify(body.sent_messages || []);
                 await env.DB.prepare(
-                    `UPDATE crm_leads SET name=?, whatsapp=?, location=?, status=?, interested_products=?, lead_products=?, instagram=?, amount=?, paid_amount=?, payment_status=?, next_call_date=?, next_action_message=?, call_notes=?, not_interested_reason=?, is_starred=?, sent_messages=?, updated_at=? WHERE id=?`
+                    `UPDATE crm_leads SET name=?, whatsapp=?, location=?, status=?, interested_products=?, lead_products=?, instagram=?, amount=?, paid_amount=?, payment_status=?, next_call_date=?, next_action_message=?, call_notes=?, not_interested_reason=?, is_starred=?, sent_messages=?, updated_at=?, assigned_to=?, is_passed=?, passed_from=?, converted=?, closer_id=? WHERE id=?`
                 ).bind(
                     body.name, body.whatsapp, body.location || '', body.status,
                     productsJson, leadProductsJson2, body.instagram || '',
@@ -508,15 +574,24 @@ export default {
                     body.payment_status, body.next_call_date || '',
                     body.next_action_message || '', body.call_notes || '',
                     body.not_interested_reason || '', body.is_starred ? 1 : 0,
-                    sentMessagesJson, now, id
+                    sentMessagesJson, now,
+                    body.assigned_to !== undefined ? body.assigned_to : null,
+                    body.is_passed ? 1 : 0,
+                    body.passed_from !== undefined ? body.passed_from : null,
+                    body.converted ? 1 : 0,
+                    body.closer_id !== undefined ? body.closer_id : null,
+                    id
                 ).run();
-                await logActivity(env, body.updatedBy, 'update', 'crm_lead', id, `Updated CRM Lead ${body.name}`);
+                await logActivity(env, body.updatedBy, body.is_passed ? 'pass_lead' : 'update', 'crm_lead', id, body.is_passed ? `Passed CRM Lead ${body.name} to user ${body.assigned_to}` : `Updated CRM Lead ${body.name}`);
                 return json({ success: true });
             }
 
             if (path.startsWith('/api/crm/leads/') && method === 'DELETE') {
                 const id = path.split('/').pop();
+                const urlParams = new URL(request.url).searchParams;
+                const deletedBy = urlParams.get('userId');
                 await env.DB.prepare('DELETE FROM crm_leads WHERE id = ?').bind(id).run();
+                await logActivity(env, deletedBy, 'delete', 'crm_lead', id, `Deleted lead ${id}`);
                 return json({ success: true });
             }
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import CrmLeadModal from '../../components/crm/CrmLeadModal';
 import CrmLeadDetailModal from '../../components/crm/CrmLeadDetailModal';
@@ -8,7 +8,7 @@ import { showToast } from '../../components/crm/CrmToast';
 const STATUS_LABELS = { 'hot': '🔥 Hot', 'warm': '🌡️ Warm', 'cold': '🧊 Cold', 'not-interested': '👎 Not Interested' };
 
 export default function CrmLeadsPage() {
-    const { crmLeads, products, addCrmLead, updateCrmLead, deleteCrmLead, addOrder, addCustomerAsync, customers, user } = useApp();
+    const { crmLeads, products, addCrmLead, updateCrmLead, deleteCrmLead, addOrder, addCustomerAsync, customers, user, api } = useApp();
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('active');
     const [payFilter, setPayFilter] = useState('all');
@@ -18,12 +18,50 @@ export default function CrmLeadsPage() {
     const [editingLead, setEditingLead] = useState(null);
     const [viewingLead, setViewingLead] = useState(null);
     const [deletingId, setDeletingId] = useState(null);
+    const [passingLead, setPassingLead] = useState(null);
+    const [recipientId, setRecipientId] = useState('');
+    const [employees, setEmployees] = useState([]); // Filtered for passing
+    const [allUsers, setAllUsers] = useState([]); // For lookups
+    const [tab, setTab] = useState('my-leads'); // 'my-leads', 'passing-in', 'passing-out'
+    const [empFilter, setEmpFilter] = useState('all');
+
+    useEffect(() => {
+        api('/users').then(data => {
+            setAllUsers(data);
+            if (user?.role === 'super_admin') {
+                setEmployees(data.filter(u => u.status === 'active'));
+            } else {
+                setEmployees(data.filter(u =>
+                    u.status === 'active' &&
+                    u.id !== user.id &&
+                    (u.roles?.includes('crm_em') || u.role === 'crm_em')
+                ));
+            }
+        }).catch(console.error);
+    }, [user, api]);
 
     const getProductNames = (ids = []) => ids.map(id => products.find(p => p.id === id || p.id === parseInt(id))?.name).filter(Boolean);
 
     const sorted = useMemo(() => {
         const q = search.toLowerCase();
         let list = crmLeads.filter(l => {
+            // Filter by tab
+            if (tab === 'my-leads') {
+                if (user?.role === 'super_admin') return true; // Super admins see all in "My Leads"
+                if (l.is_passed && l.assigned_to === user.id) return true; // Include leads passed TO me
+                if (l.is_passed && l.passed_from === user.id) return false; // Exclude leads I passed TO others
+            } else if (tab === 'passing-in') {
+                if (!l.is_passed || l.assigned_to !== user.id) return false;
+            } else if (tab === 'passing-out') {
+                if (!l.is_passed || l.passed_from !== user.id) return false;
+            }
+
+            // Admin employee filter
+            if (user?.role === 'super_admin' && empFilter !== 'all') {
+                const empId = parseInt(empFilter);
+                if (l.created_by !== empId && l.assigned_to !== empId) return false;
+            }
+
             if (q && !l.name.toLowerCase().includes(q) && !l.whatsapp.includes(q) && !(l.location || '').toLowerCase().includes(q)) return false;
             if (starredOnly && !l.is_starred) return false;
             if (statusFilter === 'active' && l.status === 'not-interested') return false;
@@ -42,7 +80,7 @@ export default function CrmLeadsPage() {
             return new Date(a.next_call_date) - new Date(b.next_call_date);
         });
         return list;
-    }, [crmLeads, search, statusFilter, payFilter, starredOnly, sortBy]);
+    }, [crmLeads, search, statusFilter, payFilter, starredOnly, sortBy, tab, user, empFilter]);
 
     const handleSave = (data) => {
         // Duplicate mobile number check (only when creating a new lead)
@@ -58,19 +96,49 @@ export default function CrmLeadsPage() {
             }
         }
 
-        if (editingLead) { updateCrmLead({ ...editingLead, ...data }); showToast('Lead updated!'); }
-        else { addCrmLead(data); showToast('Lead added!'); }
+        if (editingLead) {
+            updateCrmLead({ ...editingLead, ...data, updatedBy: user.id });
+            showToast('Lead updated!');
+
+            // Auto convert if payment was marked as paid and not already converted
+            if (data.payment_status === 'paid' && !editingLead.converted) {
+                convertToOrder({ ...editingLead, ...data });
+            }
+        }
+        else {
+            addCrmLead({ ...data, createdBy: user.id });
+            showToast('Lead added!');
+
+            // Auto convert if new lead is added as paid
+            if (data.payment_status === 'paid') {
+                // Wait a bit for the lead to be added to state or pass dummy lead
+                convertToOrder({ ...data, createdBy: user.id });
+            }
+        }
         setShowModal(false); setEditingLead(null);
 
-        // Auto convert if payment was collected
-        const paidAmount = parseFloat(data.paid_amount) || 0;
-        if (!data.converted && paidAmount > 0) {
-            convertToOrder(data);
-        }
     };
 
     const handleDelete = (id) => { deleteCrmLead(id); setDeletingId(null); showToast('Lead deleted', 'error'); };
-    const toggleStar = (lead, e) => { e.stopPropagation(); updateCrmLead({ ...lead, is_starred: !lead.is_starred }); };
+    const toggleStar = (lead, e) => { e.stopPropagation(); updateCrmLead({ ...lead, is_starred: !lead.is_starred, updatedBy: user.id }); };
+
+    const handlePassLead = async () => {
+        if (!recipientId) return showToast('Please select a recipient', 'error');
+        try {
+            await updateCrmLead({
+                ...passingLead,
+                assigned_to: parseInt(recipientId),
+                is_passed: true,
+                passed_from: user.id,
+                updatedBy: user.id
+            });
+            showToast('Lead passed successfully!');
+            setPassingLead(null);
+            setRecipientId('');
+        } catch (err) {
+            showToast('Failed to pass lead: ' + err.message, 'error');
+        }
+    };
 
     // Convert paid lead → create customer + order
     const convertToOrder = async (lead, e) => {
@@ -96,10 +164,12 @@ export default function CrmLeadsPage() {
                 items, subtotal, gstAmount: 0, total: subtotal,
                 paidAmount: lead.paid_amount || 0,
                 paymentStatus: lead.payment_status === 'paid' ? 'paid' : lead.paid_amount > 0 ? 'partial' : 'not_paid',
-                createdBy: user?.id || 1,
+                createdBy: user?.id || lead.created_by || 1,
+                closer_id: user?.id || 1
             });
-            updateCrmLead({ ...lead, converted: true });
+            updateCrmLead({ ...lead, converted: true, closer_id: user?.id || 1 });
             showToast('✅ Order created from lead!');
+
         } catch (err) { showToast('Failed: ' + err.message, 'error'); }
     };
 
@@ -115,6 +185,18 @@ export default function CrmLeadsPage() {
                 <button className="crm-btn crm-btn-primary" onClick={() => { setEditingLead(null); setShowModal(true); }}>+ Add Lead</button>
             </div>
 
+            {/* CRM Tabs */}
+            <div className="crm-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid var(--primary-100)', paddingBottom: '8px' }}>
+                <button className={`crm-tab ${tab === 'my-leads' ? 'active' : ''}`} onClick={() => setTab('my-leads')} style={{ padding: '8px 16px', border: 'none', background: tab === 'my-leads' ? 'var(--primary-100)' : 'transparent', borderRadius: 'var(--radius-md)', color: tab === 'my-leads' ? 'var(--primary-700)' : 'var(--primary-500)', fontWeight: tab === 'my-leads' ? 600 : 400, cursor: 'pointer' }}>My Leads</button>
+                <button className={`crm-tab ${tab === 'passing-in' ? 'active' : ''}`} onClick={() => setTab('passing-in')} style={{ padding: '8px 16px', border: 'none', background: tab === 'passing-in' ? 'var(--primary-100)' : 'transparent', borderRadius: 'var(--radius-md)', color: tab === 'passing-in' ? 'var(--primary-700)' : 'var(--primary-500)', fontWeight: tab === 'passing-in' ? 600 : 400, cursor: 'pointer', position: 'relative' }}>
+                    Passing In
+                    {crmLeads.filter(l => l.is_passed && l.assigned_to === user?.id).length > 0 && (
+                        <span style={{ position: 'absolute', top: '4px', right: '4px', width: '8px', height: '8px', background: 'var(--danger-500)', borderRadius: '50%', border: '2px solid white' }} />
+                    )}
+                </button>
+                <button className={`crm-tab ${tab === 'passing-out' ? 'active' : ''}`} onClick={() => setTab('passing-out')} style={{ padding: '8px 16px', border: 'none', background: tab === 'passing-out' ? 'var(--primary-100)' : 'transparent', borderRadius: 'var(--radius-md)', color: tab === 'passing-out' ? 'var(--primary-700)' : 'var(--primary-500)', fontWeight: tab === 'passing-out' ? 600 : 400, cursor: 'pointer' }}>Pass Out</button>
+            </div>
+
             {/* Search + Sort */}
             <div className="crm-search-sort-row">
                 <input className="crm-search-input" style={{ marginBottom: 0, flex: 1 }} placeholder="🔍 Search name, WhatsApp, location..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -126,6 +208,15 @@ export default function CrmLeadsPage() {
                     <option value="name">🔤 Name A–Z</option>
                     <option value="call">⏰ Next Call</option>
                 </select>
+
+                {user.role === 'super_admin' && (
+                    <select className="crm-input" value={empFilter} onChange={e => setEmpFilter(e.target.value)} style={{ maxWidth: '160px' }}>
+                        <option value="all">👤 All Employees</option>
+                        {employees.map(emp => (
+                            <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
+                    </select>
+                )}
             </div>
 
             {/* Filters */}
@@ -176,6 +267,9 @@ export default function CrmLeadsPage() {
                                                     <div>
                                                         <div className="crm-card-name">{lead.name}{lead.is_starred ? ' ⭐' : ''}</div>
                                                         <div className="crm-card-location" style={{ fontSize: '0.72rem' }}>📱{lead.whatsapp}{lead.location ? ` · 📍${lead.location}` : ''}</div>
+                                                        <div className="crm-card-creator" style={{ fontSize: '0.65rem', color: 'var(--gray-500)', marginTop: '2px' }}>
+                                                            👤 {allUsers?.find(e => Number(e.id) === Number(lead.created_by))?.name || 'System'} · 📅 {new Date(lead.created_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </td>
@@ -203,9 +297,8 @@ export default function CrmLeadsPage() {
                                                     <a className="crm-icon-btn" href={`https://wa.me/${lead.whatsapp}`} target="_blank" rel="noopener noreferrer" title="WhatsApp">💬</a>
                                                     {lead.instagram && <a className="crm-icon-btn" href={lead.instagram} target="_blank" rel="noopener noreferrer" title="Instagram">📸</a>}
                                                     <button className="crm-icon-btn" title="Edit" onClick={e => { e.stopPropagation(); setEditingLead(lead); setShowModal(true); }}>✏️</button>
-                                                    {lead.payment_status === 'paid' && lead.lead_products?.length > 0 && (
-                                                        <button className="crm-icon-btn" title="Create Order" onClick={e => convertToOrder(lead, e)}>🧾</button>
-                                                    )}
+                                                    <button className="crm-icon-btn" title="Pass Lead" onClick={e => { e.stopPropagation(); setPassingLead(lead); }}>➡️</button>
+
                                                     <button className="crm-icon-btn crm-icon-btn-danger" title="Delete" onClick={e => { e.stopPropagation(); setDeletingId(lead.id); }}>🗑️</button>
                                                 </div>
                                             </td>
@@ -228,6 +321,9 @@ export default function CrmLeadsPage() {
                                             <div className="crm-avatar">{lead.name.charAt(0).toUpperCase()}</div>
                                             <div>
                                                 <div className="crm-card-name">{lead.name}{lead.is_starred ? ' ⭐' : ''}</div>
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--gray-500)' }}>
+                                                    👤 {allUsers?.find(e => Number(e.id) === Number(lead.created_by))?.name || 'System'} · {new Date(lead.created_at).toLocaleDateString('en-IN')}
+                                                </div>
                                                 {lead.location && <div className="crm-card-location">📍{lead.location}</div>}
                                             </div>
                                         </div>
@@ -245,7 +341,8 @@ export default function CrmLeadsPage() {
                                         <a className="crm-icon-btn" href={`https://wa.me/${lead.whatsapp}`} target="_blank" rel="noopener noreferrer" title="WhatsApp">💬</a>
                                         {lead.instagram && <a className="crm-icon-btn" href={lead.instagram} target="_blank" rel="noopener noreferrer" title="Instagram">📸</a>}
                                         <button className="crm-icon-btn" title="Edit" onClick={e => { e.stopPropagation(); setEditingLead(lead); setShowModal(true); }}>✏️</button>
-                                        {lead.payment_status === 'paid' && lead.lead_products?.length > 0 && <button className="crm-icon-btn" title="Create Order" onClick={e => convertToOrder(lead, e)}>🧾</button>}
+                                        <button className="crm-icon-btn" title="Pass Lead" onClick={e => { e.stopPropagation(); setPassingLead(lead); }}>➡️</button>
+
                                         <button className="crm-icon-btn crm-icon-btn-danger" title="Delete" onClick={e => { e.stopPropagation(); setDeletingId(lead.id); }}>🗑️</button>
                                     </div>
                                 </div>
@@ -255,9 +352,47 @@ export default function CrmLeadsPage() {
                 </>
             )}
 
-            {showModal && <CrmLeadModal lead={editingLead} onClose={() => { setShowModal(false); setEditingLead(null); }} onSave={handleSave} crmLeads={crmLeads} />}
-            {viewingLead && <CrmLeadDetailModal lead={crmLeads.find(l => l.id === viewingLead.id) || viewingLead} onClose={() => setViewingLead(null)} onUpdate={(data) => { updateCrmLead({ ...viewingLead, ...data }); showToast('Lead updated!'); setViewingLead(null); }} />}
+            {showModal && <CrmLeadModal lead={editingLead} onClose={() => { setShowModal(false); setEditingLead(null); }} onSave={handleSave} crmLeads={crmLeads} allUsers={allUsers} />}
+            {viewingLead && (
+                <CrmLeadDetailModal
+                    lead={crmLeads.find(l => l.id === viewingLead.id) || viewingLead}
+                    employees={allUsers}
+                    onClose={() => setViewingLead(null)}
+                    onUpdate={(data) => { updateCrmLead({ ...viewingLead, ...data, updatedBy: user.id }); showToast('Lead updated!'); setViewingLead(null); }}
+                />
+            )}
             {deletingId && <CrmConfirmDialog message="Delete this lead? This cannot be undone." onConfirm={() => handleDelete(deletingId)} onCancel={() => setDeletingId(null)} />}
+
+            {passingLead && (
+                <div className="crm-modal-overlay" onClick={() => setPassingLead(null)}>
+                    <div className="crm-modal crm-lead-modal" style={{ width: '400px' }} onClick={e => e.stopPropagation()}>
+                        <div className="crm-modal-header">
+                            <h2 className="crm-modal-title">Pass Lead: {passingLead.name}</h2>
+                            <button className="crm-close-btn" onClick={() => setPassingLead(null)}>×</button>
+                        </div>
+                        <div className="crm-modal-body">
+                            <div className="form-group">
+                                <label>Target Employee</label>
+                                <select
+                                    className="crm-input"
+                                    value={recipientId}
+                                    onChange={e => setRecipientId(e.target.value)}
+                                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+                                >
+                                    <option value="">Select Employee...</option>
+                                    {employees.map(emp => (
+                                        <option key={emp.id} value={emp.id}>{emp.name} ({emp.role_label})</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="crm-modal-footer">
+                            <button className="crm-btn crm-btn-ghost" onClick={() => setPassingLead(null)}>Cancel</button>
+                            <button className="crm-btn crm-btn-primary" onClick={handlePassLead}>Pass Lead</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

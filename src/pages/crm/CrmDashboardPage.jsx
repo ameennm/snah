@@ -1,208 +1,170 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-
-const DATE_FILTERS = ['all', 'today', 'week', 'month', 'custom'];
-
-function inRange(dateStr, filter, from, to) {
-    if (filter === 'all') return true;
-    if (!dateStr) return false;
-    const d = new Date(dateStr).setHours(0, 0, 0, 0);
-    const now = new Date().setHours(0, 0, 0, 0);
-    if (filter === 'today') return d === now;
-    if (filter === 'week') {
-        const start = new Date(); start.setDate(start.getDate() - start.getDay()); start.setHours(0, 0, 0, 0);
-        const end = new Date(start); end.setDate(end.getDate() + 6);
-        return d >= start.getTime() && d <= end.getTime();
-    }
-    if (filter === 'month') {
-        const n = new Date();
-        return new Date(dateStr).getMonth() === n.getMonth() && new Date(dateStr).getFullYear() === n.getFullYear();
-    }
-    if (filter === 'custom' && from && to) {
-        return d >= new Date(from).setHours(0, 0, 0, 0) && d <= new Date(to).setHours(0, 0, 0, 0);
-    }
-    return true;
-}
-
-function getUrgencyLabel(dateStr) {
-    if (!dateStr) return null;
-    const d = new Date(dateStr).setHours(0, 0, 0, 0);
-    const now = new Date().setHours(0, 0, 0, 0);
-    const diff = Math.floor((d - now) / 86400000);
-    if (diff < 0) return { label: 'Overdue', color: 'var(--accent-red)', days: Math.abs(diff) };
-    if (diff === 0) return { label: 'Today', color: 'var(--accent-yellow, #facc15)', days: 0 };
-    if (diff <= 3) return { label: `In ${diff}d`, color: 'var(--accent-orange)', days: diff };
-    return null;
-}
+import { FiUsers, FiTrendingUp, FiTarget, FiCheckCircle } from 'react-icons/fi';
 
 export default function CrmDashboardPage() {
-    const { crmLeads, products } = useApp();
-    const [dateFilter, setDateFilter] = useState('all');
-    const [from, setFrom] = useState('');
-    const [to, setTo] = useState('');
+    const { crmLeads, orders, user, api } = useApp();
+    const [employees, setEmployees] = useState([]);
+    const [selectedEmpId, setSelectedEmpId] = useState(null);
 
-    const filtered = useMemo(() =>
-        crmLeads.filter(l => inRange(l.created_at, dateFilter, from, to)),
-        [crmLeads, dateFilter, from, to]
-    );
+    useEffect(() => {
+        api('/users').then(setEmployees).catch(console.error);
+    }, [api]);
 
-    const activeLeads = filtered.filter(l => l.status !== 'not-interested');
+    // Force employee to see only their own stats
+    const isAdmin = user?.role === 'super_admin';
+    const effectiveEmpId = isAdmin ? selectedEmpId : user?.id;
 
-    const totalRevenue = filtered
-        .filter(l => l.payment_status === 'paid')
-        .reduce((s, l) => s + (l.paid_amount || 0), 0);
+    const stats = useMemo(() => {
+        const relevantLeads = effectiveEmpId
+            ? crmLeads.filter(l => l.created_by === effectiveEmpId || l.closer_id === effectiveEmpId || l.assigned_to === effectiveEmpId)
+            : crmLeads;
 
-    const pipeline = filtered
-        .filter(l => l.status === 'hot' || l.status === 'warm')
-        .reduce((s, l) => s + (l.amount || 0), 0);
+        // Breakdown counts
+        const breakdown = {
+            hot: relevantLeads.filter(l => l.status === 'hot').length,
+            warm: relevantLeads.filter(l => l.status === 'warm').length,
+            cold: relevantLeads.filter(l => l.status === 'cold').length,
+            notInterested: relevantLeads.filter(l => l.status === 'not-interested').length,
+            paid: relevantLeads.filter(l => l.payment_status === 'paid').length,
+            pending: relevantLeads.filter(l => l.payment_status === 'pending').length,
+        };
 
-    const hotLeads = filtered.filter(l => l.status === 'hot').length;
+        const empStats = employees.filter(e => e.role !== 'super_admin').map(emp => {
+            const leadsEntered = crmLeads.filter(l => l.created_by === emp.id).length;
+            const leadsClosed = crmLeads.filter(l => l.closer_id === emp.id && l.converted).length;
 
-    const pendingPaymentLeads = crmLeads
-        .filter(l => l.payment_status === 'pending' && l.status !== 'not-interested' && l.amount > 0)
-        .map(l => ({ ...l, pending: Math.max(0, (l.amount || 0) - (l.paid_amount || 0)) }))
-        .filter(l => l.pending > 0)
-        .sort((a, b) => b.pending - a.pending);
-
-    // Reminder counts (always from all leads, not date-filtered)
-    const now = new Date().setHours(0, 0, 0, 0);
-    const overdueCount = crmLeads.filter(l => l.next_call_date && new Date(l.next_call_date).setHours(0, 0, 0, 0) < now && l.status !== 'not-interested').length;
-    const todayCount = crmLeads.filter(l => l.next_call_date && new Date(l.next_call_date).setHours(0, 0, 0, 0) === now && l.status !== 'not-interested').length;
-    const upcomingCount = crmLeads.filter(l => l.next_call_date && new Date(l.next_call_date).setHours(0, 0, 0, 0) > now && l.status !== 'not-interested').length;
-
-    // Product interest breakdown
-    const productCounts = useMemo(() => {
-        const counts = {};
-        crmLeads.forEach(l => {
-            (l.lead_products || []).forEach(lp => {
-                const pid = lp.id;
-                counts[pid] = (counts[pid] || 0) + 1;
-            });
+            return {
+                ...emp,
+                leadsEntered,
+                leadsClosed,
+                conversionRate: leadsEntered > 0 ? ((leadsClosed / leadsEntered) * 100).toFixed(1) : 0
+            };
         });
-        return Object.entries(counts)
-            .map(([pid, count]) => ({ name: products.find(p => p.id === parseInt(pid) || p.id === pid)?.name || `Product #${pid}`, count }))
-            .sort((a, b) => b.count - a.count);
-    }, [crmLeads, products]);
+
+        return {
+            totalLeads: relevantLeads.length,
+            totalClosed: relevantLeads.filter(l => l.converted).length,
+            breakdown,
+            employeeStats: empStats,
+            selectedName: effectiveEmpId ? employees.find(e => e.id === effectiveEmpId)?.name : 'Overall Business'
+        };
+    }, [crmLeads, orders, employees, effectiveEmpId]);
+
+    const selectedEmployee = effectiveEmpId ? employees.find(e => e.id === effectiveEmpId) : null;
 
     return (
-        <div className="page-content crm-page">
-            <div className="crm-page-header">
-                <h1 className="crm-page-title">📊 CRM Dashboard</h1>
-                <p className="crm-page-subtitle">Sales pipeline overview</p>
+        <div className="page-content crm-dashboard">
+            <div className="crm-page-header" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <h1 className="crm-page-title">📈 CRM Overview: {stats.selectedName}</h1>
+                    <p className="crm-page-subtitle">
+                        {effectiveEmpId ? `Showing performance for ${stats.selectedName}` : 'Showing combined performance for all employees'}
+                    </p>
+                </div>
+                {isAdmin && effectiveEmpId && (
+                    <button className="crm-btn crm-btn-ghost" onClick={() => setSelectedEmpId(null)}>
+                        🏠 Show Overall Picture
+                    </button>
+                )}
             </div>
 
-            {/* Date filter */}
-            <div className="crm-filter-pills" style={{ marginBottom: '1.25rem' }}>
-                {DATE_FILTERS.map(f => (
-                    <button key={f} className={`crm-pill ${dateFilter === f ? 'active' : ''}`} onClick={() => setDateFilter(f)}>
-                        {f === 'all' ? 'All Time' : f.charAt(0).toUpperCase() + f.slice(1)}
-                    </button>
-                ))}
-            </div>
-            {dateFilter === 'custom' && (
-                <div className="crm-form-row" style={{ marginBottom: '1rem', maxWidth: 400 }}>
-                    <div className="crm-form-group">
-                        <label style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>From</label>
-                        <input type="date" className="crm-input" value={from} onChange={e => setFrom(e.target.value)} />
+            <div className="stats-grid">
+                <div className="stat-card">
+                    <div className="stat-icon blue"><FiTarget /></div>
+                    <div className="stat-info">
+                        <div className="stat-label">Total Leads</div>
+                        <div className="stat-value">{stats.totalLeads}</div>
                     </div>
-                    <div className="crm-form-group">
-                        <label style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>To</label>
-                        <input type="date" className="crm-input" value={to} onChange={e => setTo(e.target.value)} />
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon green"><FiCheckCircle /></div>
+                    <div className="stat-info">
+                        <div className="stat-label">Leads Closed</div>
+                        <div className="stat-value">{stats.totalClosed}</div>
+                    </div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-icon yellow"><FiTrendingUp /></div>
+                    <div className="stat-info">
+                        <div className="stat-label">Conversion Rate</div>
+                        <div className="stat-value">
+                            {stats.totalLeads > 0 ? ((stats.totalClosed / stats.totalLeads) * 100).toFixed(1) : 0}%
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Status Breakdown Grid */}
+            <div className="crm-dashboard-breakdown" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginTop: '1.5rem' }}>
+                <div className="stat-mini-card" style={{ background: '#fef2f2', border: '1px solid #fee2e2', padding: '12px', borderRadius: ' var(--radius-md)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#991b1b', fontWeight: 600, textTransform: 'uppercase' }}>🔥 Hot</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#991b1b' }}>{stats.breakdown.hot}</div>
+                </div>
+                <div className="stat-mini-card" style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: '12px', borderRadius: ' var(--radius-md)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#92400e', fontWeight: 600, textTransform: 'uppercase' }}>🌡️ Warm</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#92400e' }}>{stats.breakdown.warm}</div>
+                </div>
+                <div className="stat-mini-card" style={{ background: '#eff6ff', border: '1px solid #dbeafe', padding: '12px', borderRadius: ' var(--radius-md)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600, textTransform: 'uppercase' }}>🧊 Cold</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1e40af' }}>{stats.breakdown.cold}</div>
+                </div>
+                <div className="stat-mini-card" style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', padding: '12px', borderRadius: ' var(--radius-md)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#374151', fontWeight: 600, textTransform: 'uppercase' }}>👎 Not Int.</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#374151' }}>{stats.breakdown.notInterested}</div>
+                </div>
+                <div className="stat-mini-card" style={{ background: '#ecfdf5', border: '1px solid #d1fae5', padding: '12px', borderRadius: ' var(--radius-md)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#065f46', fontWeight: 600, textTransform: 'uppercase' }}>✅ Paid</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#065f46' }}>{stats.breakdown.paid}</div>
+                </div>
+                <div className="stat-mini-card" style={{ background: '#fff7ed', border: '1px solid #ffedd5', padding: '12px', borderRadius: ' var(--radius-md)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#9a3412', fontWeight: 600, textTransform: 'uppercase' }}>⏳ Pending</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#9a3412' }}>{stats.breakdown.pending}</div>
+                </div>
+            </div>
+
+            {isAdmin && (
+                <div className="card" style={{ marginTop: '24px' }}>
+                    <div className="card-header">
+                        <h2>Employee Performance Benchmarks</h2>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', fontWeight: 400 }}>Click an employee name to see their personal overview</p>
+                    </div>
+                    <div className="table-container">
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Leads Entered</th>
+                                    <th>Leads Closed</th>
+                                    <th>Conversion Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {stats.employeeStats.map(emp => (
+                                    <tr
+                                        key={emp.id}
+                                        onClick={() => setSelectedEmpId(emp.id)}
+                                        style={{ cursor: 'pointer', background: effectiveEmpId === emp.id ? 'var(--primary-50)' : 'inherit' }}
+                                        className="crm-table-row"
+                                    >
+                                        <td className="font-bold" style={{ color: 'var(--primary-600)' }}>{emp.name}</td>
+                                        <td>{emp.leadsEntered}</td>
+                                        <td>{emp.leadsClosed}</td>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ flex: 1, height: '8px', background: 'var(--gray-100)', borderRadius: '4px', overflow: 'hidden' }}>
+                                                    <div style={{ width: `${emp.conversionRate}%`, height: '100%', background: 'var(--success-500)' }}></div>
+                                                </div>
+                                                <span>{emp.conversionRate}%</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}
-
-            {/* Stats */}
-            <div className="crm-stats-grid">
-                <div className="crm-stat-card crm-stat-green">
-                    <div className="crm-stat-icon">💰</div>
-                    <div className="crm-stat-value">₹{totalRevenue.toLocaleString('en-IN')}</div>
-                    <div className="crm-stat-label">Revenue Closed</div>
-                </div>
-                <div className="crm-stat-card crm-stat-purple">
-                    <div className="crm-stat-icon">📈</div>
-                    <div className="crm-stat-value">₹{pipeline.toLocaleString('en-IN')}</div>
-                    <div className="crm-stat-label">In Pipeline</div>
-                </div>
-                <div className="crm-stat-card crm-stat-red">
-                    <div className="crm-stat-icon">🔥</div>
-                    <div className="crm-stat-value">{hotLeads}</div>
-                    <div className="crm-stat-label">Hot Leads</div>
-                </div>
-                <div className="crm-stat-card crm-stat-blue">
-                    <div className="crm-stat-icon">👥</div>
-                    <div className="crm-stat-value">{activeLeads.length}</div>
-                    <div className="crm-stat-label">Active Leads</div>
-                </div>
-            </div>
-
-            {/* Follow-up summary */}
-            <div className="crm-followup-bar">
-                <div className="crm-followup-item crm-fu-red">
-                    <span className="crm-fu-count">{overdueCount}</span>
-                    <span className="crm-fu-label">🔴 Overdue</span>
-                </div>
-                <div className="crm-followup-item crm-fu-yellow">
-                    <span className="crm-fu-count">{todayCount}</span>
-                    <span className="crm-fu-label">🟡 Today</span>
-                </div>
-                <div className="crm-followup-item crm-fu-green">
-                    <span className="crm-fu-count">{upcomingCount}</span>
-                    <span className="crm-fu-label">🟢 Upcoming</span>
-                </div>
-            </div>
-
-            <div className="crm-dash-bottom">
-                {/* Needs attention */}
-                <div className="crm-dash-card">
-                    <h3 className="crm-dash-card-title">⚠️ Needs Attention</h3>
-                    <p className="crm-dash-card-subtitle">Pending payments, largest first</p>
-                    {pendingPaymentLeads.length === 0 ? (
-                        <div className="crm-empty-small">✅ All payments settled</div>
-                    ) : (
-                        <div className="crm-attention-list">
-                            {pendingPaymentLeads.slice(0, 8).map(l => {
-                                const urgency = getUrgencyLabel(l.next_call_date);
-                                return (
-                                    <div key={l.id} className="crm-attention-item">
-                                        <div className="crm-avatar crm-avatar-sm">{l.name.charAt(0).toUpperCase()}</div>
-                                        <div className="crm-attention-info">
-                                            <span className="crm-attention-name">{l.name}</span>
-                                            {l.location && <span className="crm-attention-loc">{l.location}</span>}
-                                        </div>
-                                        <div className="crm-attention-right">
-                                            <span className="crm-attention-amount">₹{l.pending.toLocaleString('en-IN')}</span>
-                                            {urgency && <span className="crm-attention-urgency" style={{ color: urgency.color }}>{urgency.label}</span>}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-
-                {/* Product interest */}
-                {productCounts.length > 0 && (
-                    <div className="crm-dash-card">
-                        <h3 className="crm-dash-card-title">🛍️ Product Interest</h3>
-                        <p className="crm-dash-card-subtitle">Which products are most in demand</p>
-                        <div className="crm-product-interest-list">
-                            {productCounts.map(({ name, count }) => {
-                                const max = productCounts[0].count;
-                                return (
-                                    <div key={name} className="crm-pi-row">
-                                        <span className="crm-pi-name">{name}</span>
-                                        <div className="crm-pi-bar-wrap">
-                                            <div className="crm-pi-bar" style={{ width: `${(count / max) * 100}%` }} />
-                                        </div>
-                                        <span className="crm-pi-count">{count} lead{count !== 1 ? 's' : ''}</span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-            </div>
         </div>
     );
 }
