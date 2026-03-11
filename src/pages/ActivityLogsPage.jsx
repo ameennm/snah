@@ -29,8 +29,9 @@ export default function ActivityLogsPage() {
         const offset = (page - 1) * PAGE_SIZE;
         api(`/activity_logs?limit=${PAGE_SIZE}&offset=${offset}`)
             .then(data => {
-                setLogs(data.results || []);
-                setTotalLogs(data.total || 0);
+                const list = Array.isArray(data) ? data : (data.results || []);
+                setLogs(list);
+                setTotalLogs(data.total !== undefined ? data.total : list.length);
             })
             .catch(console.error)
             .finally(() => setLoading(false));

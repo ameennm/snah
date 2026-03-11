@@ -28,13 +28,13 @@ export default function LedgerPage() {
                 // If the user is an employee, filter locally as well just to be safe,
                 // although the backend will see the user id in the JWT if auth is passed via cookies.
                 // However, since we don't pass userId gracefully on GETs, we filter locally for employees.
-                let list = res.results || [];
+                let list = Array.isArray(res) ? res : (res.results || []);
                 if (!isAdmin) {
                     list = list.filter(entry => entry.createdBy === user?.id);
                 }
                 
                 setLedgerData(list);
-                setTotalLedger(isAdmin ? (res.total || 0) : list.length); 
+                setTotalLedger(isAdmin ? (res.total !== undefined ? res.total : list.length) : list.length); 
                 
             } catch (err) {
                 console.error("Failed to fetch ledger", err);

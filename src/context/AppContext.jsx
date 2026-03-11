@@ -41,9 +41,9 @@ function appReducer(state, action) {
 
         // Bulk data from API
         case 'SET_CUSTOMERS':
-            return { ...state, customers: action.payload };
+            return { ...state, customers: Array.isArray(action.payload) ? action.payload : (action.payload?.results || []) };
         case 'SET_PRODUCTS':
-            return { ...state, products: action.payload };
+            return { ...state, products: Array.isArray(action.payload) ? action.payload : (action.payload?.results || []) };
         case 'SET_ORDERS':
             return { 
                 ...state, 
@@ -51,7 +51,7 @@ function appReducer(state, action) {
                 ordersTotal: action.payload?.total || (Array.isArray(action.payload) ? action.payload.length : (state.ordersTotal || 0)) 
             };
         case 'SET_LEDGER':
-            return { ...state, ledger: action.payload };
+            return { ...state, ledger: Array.isArray(action.payload) ? action.payload : (action.payload?.results || []) };
 
         // Optimistic CRUD
         case 'ADD_CUSTOMER':

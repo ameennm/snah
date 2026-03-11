@@ -735,8 +735,8 @@ export default {
                             u.id, 
                             u.name, 
                             u.role,
-                            COUNT(l_created.id) as leadsEntered,
-                            COUNT(l_closed.id) as leadsClosed
+                            COUNT(DISTINCT l_created.id) as leadsEntered,
+                            COUNT(DISTINCT l_closed.id) as leadsClosed
                         FROM users u
                         LEFT JOIN crm_leads l_created ON l_created.created_by = u.id
                         LEFT JOIN crm_leads l_closed ON l_closed.closer_id = u.id AND l_closed.converted = 1

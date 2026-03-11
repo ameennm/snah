@@ -26,8 +26,9 @@ export default function CustomersPage() {
             try {
                 // To maintain full backend offloading, we pass limit, offset, and search manually.
                 const res = await api(`/customers?limit=${PAGE_SIZE}&offset=${offset}&search=${encodeURIComponent(search)}`);
-                setCustomersData(res.results || []);
-                setTotalCustomers(res.total || 0);
+                const list = Array.isArray(res) ? res : (res.results || []);
+                setCustomersData(list);
+                setTotalCustomers(res.total !== undefined ? res.total : list.length);
             } catch (err) {
                 console.error("Failed to fetch customers", err);
             }
