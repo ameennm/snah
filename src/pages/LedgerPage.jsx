@@ -1,16 +1,47 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiEdit2, FiArrowUpRight, FiArrowDownLeft } from 'react-icons/fi';
 
 export default function LedgerPage() {
-    const { ledger, user, hasPermission, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry } = useApp();
+    const { user, hasPermission, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, api } = useApp();
     const isAdmin = user?.role === 'super_admin';
+
+    const [ledgerData, setLedgerData] = useState([]);
+    const [totalLedger, setTotalLedger] = useState(0);
 
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
     const [showAdd, setShowAdd] = useState(false);
     const [editEntry, setEditEntry] = useState(null); // null = adding new, otherwise editing existing
+
+    // Pagination
+    const [page, setPage] = useState(1);
+    const PAGE_SIZE = 20;
+
+    useEffect(() => {
+        const timer = setTimeout(async () => {
+            const offset = (page - 1) * PAGE_SIZE;
+            try {
+                const res = await api(`/ledger?limit=${PAGE_SIZE}&offset=${offset}&search=${encodeURIComponent(search)}&type=${typeFilter}`);
+                
+                // If the user is an employee, filter locally as well just to be safe,
+                // although the backend will see the user id in the JWT if auth is passed via cookies.
+                // However, since we don't pass userId gracefully on GETs, we filter locally for employees.
+                let list = res.results || [];
+                if (!isAdmin) {
+                    list = list.filter(entry => entry.createdBy === user?.id);
+                }
+                
+                setLedgerData(list);
+                setTotalLedger(isAdmin ? (res.total || 0) : list.length); 
+                
+            } catch (err) {
+                console.error("Failed to fetch ledger", err);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [api, page, search, typeFilter, isAdmin, user?.id]);
 
     const blankForm = {
         type: 'expense',
@@ -30,18 +61,8 @@ export default function LedgerPage() {
         'Sales', 'Refund Received', 'Interest', 'Commission', 'Other Income',
     ];
 
-    // Filter: employees see only their own entries
-    const filtered = ledger
-        .filter((entry) => {
-            if (!isAdmin && entry.created_by !== user?.id) return false;
-            const matchesSearch =
-                entry.description.toLowerCase().includes(search.toLowerCase()) ||
-                entry.category.toLowerCase().includes(search.toLowerCase()) ||
-                (entry.reference || '').toLowerCase().includes(search.toLowerCase());
-            const matchesType = typeFilter === 'all' || entry.type === typeFilter;
-            return matchesSearch && matchesType;
-        })
-        .sort((a, b) => new Date(b.date) - new Date(a.date));
+    // The data is now pre-filtered and sorted by the backend
+    const filtered = ledgerData;
 
     const totalIncome = filtered.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
     const totalExpense = filtered.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
@@ -114,7 +135,7 @@ export default function LedgerPage() {
         '₹' + Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     // Can employee edit this entry? Only their own.
-    const canEdit = (entry) => isAdmin || entry.created_by === user?.id;
+    const canEdit = (entry) => isAdmin || entry.createdBy === user?.id;
 
     const modalTitle = editEntry
         ? `Edit ${editEntry.type === 'income' ? 'Income' : 'Expense'}`
@@ -164,7 +185,7 @@ export default function LedgerPage() {
             {/* Ledger Table */}
             <div className="card">
                 <div className="card-header">
-                    <h2>Ledger ({filtered.length} entries)</h2>
+                    <h2>Ledger ({totalLedger} entries)</h2>
                     <div className="filters-row">
                         <div className="search-bar">
                             <FiSearch className="search-icon" />
@@ -290,6 +311,18 @@ export default function LedgerPage() {
                         </tbody>
                     </table>
                 </div>
+                {totalLedger > PAGE_SIZE && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderTop: '1px solid var(--border-light)', background: 'white', borderBottomLeftRadius: 'var(--radius-lg)', borderBottomRightRadius: 'var(--radius-lg)' }}>
+                        <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
+                            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalLedger)} of {totalLedger}
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Prev</button>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, padding: '0 8px' }}>Page {page} of {Math.ceil(totalLedger / PAGE_SIZE)}</span>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.min(Math.ceil(totalLedger / PAGE_SIZE), p + 1))} disabled={page === Math.ceil(totalLedger / PAGE_SIZE)}>Next →</button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Add / Edit Entry Modal */}

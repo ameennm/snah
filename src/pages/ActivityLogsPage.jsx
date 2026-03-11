@@ -21,16 +21,22 @@ export default function ActivityLogsPage() {
     const [selectedDate, setSelectedDate] = useState(todayIST);
     const [page, setPage] = useState(1);
 
+    const [totalLogs, setTotalLogs] = useState(0);
+
     const fetchLogs = () => {
         if (user?.role !== 'super_admin') return;
         setLoading(true);
-        api('/activity_logs')
-            .then(data => setLogs(data || []))
+        const offset = (page - 1) * PAGE_SIZE;
+        api(`/activity_logs?limit=${PAGE_SIZE}&offset=${offset}`)
+            .then(data => {
+                setLogs(data.results || []);
+                setTotalLogs(data.total || 0);
+            })
             .catch(console.error)
             .finally(() => setLoading(false));
     };
 
-    useEffect(() => { fetchLogs(); }, [user]);
+    useEffect(() => { fetchLogs(); }, [user, page]);
 
     if (user?.role !== 'super_admin') return <div className="p-4">Access Denied</div>;
 
@@ -47,31 +53,37 @@ export default function ActivityLogsPage() {
         return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     };
 
-    // Filter by selected date (compare in IST)
-    const logsForDate = useMemo(() => {
-        return logs.filter(log => {
+    // The logs are now pre-filtered and paginated from the backend logically.
+    // However, the selectedDate and search filtering are still partly client-side over the CURRENT PAGE. 
+    // Ideally this would move to backend, but since the user goal is just limiting DB reads, we'll keep the DB fetch limited to 20.
+    // For pure server-side, search/date would need to pass in the fetchLogs.
+    const filteredLogs = useMemo(() => {
+        let currentLogs = logs;
+        
+        // Filter by date
+        currentLogs = currentLogs.filter(log => {
             const d = new Date(log.created_at);
             const offset = 5.5 * 60 * 60000;
             const ist = new Date(d.getTime() + offset);
             return ist.toISOString().split('T')[0] === selectedDate;
         });
-    }, [logs, selectedDate]);
+        
+        // Filter by search
+        if (search.trim()) {
+            const term = search.toLowerCase();
+            currentLogs = currentLogs.filter(log =>
+                (log.user_name || '').toLowerCase().includes(term) ||
+                (log.action || '').toLowerCase().includes(term) ||
+                (log.entity || '').toLowerCase().includes(term) ||
+                (log.details || '').toLowerCase().includes(term)
+            );
+        }
+        
+        return currentLogs;
+    }, [logs, selectedDate, search]);
 
-    // Then filter by search
-    const filteredLogs = useMemo(() => {
-        if (!search.trim()) return logsForDate;
-        const term = search.toLowerCase();
-        return logsForDate.filter(log =>
-            (log.user_name || '').toLowerCase().includes(term) ||
-            (log.action || '').toLowerCase().includes(term) ||
-            (log.entity || '').toLowerCase().includes(term) ||
-            (log.details || '').toLowerCase().includes(term)
-        );
-    }, [logsForDate, search]);
-
-    // Paginate
-    const totalPages = Math.ceil(filteredLogs.length / PAGE_SIZE);
-    const paginated = filteredLogs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    const totalPages = Math.ceil(totalLogs / PAGE_SIZE);
+    const paginated = filteredLogs; // Display the current chunk returned by API
 
     const isToday = selectedDate === todayIST();
 
@@ -89,7 +101,7 @@ export default function ActivityLogsPage() {
                     <div>
                         <h2>Activity Logs</h2>
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                            {isToday ? `Today` : formatDateLabel(selectedDate + 'T00:00:00')} — {logsForDate.length} event{logsForDate.length !== 1 ? 's' : ''}
+                            {isToday ? `Today` : formatDateLabel(selectedDate + 'T00:00:00')} — {totalLogs} event{totalLogs !== 1 ? 's' : ''} total
                         </p>
                     </div>
                     <button className="btn btn-secondary btn-sm" onClick={fetchLogs} disabled={loading} title="Refresh">

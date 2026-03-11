@@ -138,13 +138,23 @@ export default {
 
             // ====== ACTIVITY LOGS ======
             if (path === '/api/activity_logs' && method === 'GET') {
-                const { results } = await env.DB.prepare(`
+                const urlParams = new URL(request.url).searchParams;
+                const limit = parseInt(urlParams.get('limit')) || 20;
+                const offset = parseInt(urlParams.get('offset')) || 0;
+                
+                const countQuery = 'SELECT COUNT(*) as total FROM activity_logs';
+                const { results: countResult } = await env.DB.prepare(countQuery).all();
+                const total = countResult[0].total;
+                
+                const query = `
                     SELECT a.*, u.name as user_name, u.role_label as user_role 
                     FROM activity_logs a 
                     LEFT JOIN users u ON a.user_id = u.id 
-                    ORDER BY a.created_at DESC LIMIT 500
-                `).all();
-                return json(results);
+                    ORDER BY a.created_at DESC LIMIT ? OFFSET ?
+                `;
+                const { results } = await env.DB.prepare(query).bind(limit, offset).all();
+                
+                return json({ results, total });
             }
 
             // ====== DELIVERY PARTNERS ======
@@ -231,8 +241,30 @@ export default {
 
             // ====== CUSTOMERS ======
             if (path === '/api/customers' && method === 'GET') {
-                const { results } = await env.DB.prepare('SELECT * FROM customers ORDER BY id DESC').all();
-                return json(results);
+                const urlParams = new URL(request.url).searchParams;
+                const limit = parseInt(urlParams.get('limit')) || 20;
+                const offset = parseInt(urlParams.get('offset')) || 0;
+                const search = urlParams.get('search');
+                
+                let query = 'SELECT * FROM customers';
+                let countQuery = 'SELECT COUNT(*) as total FROM customers';
+                const values = [];
+                
+                if (search) {
+                    const searchClause = ' WHERE name LIKE ? OR phone LIKE ? OR address LIKE ? OR area LIKE ?';
+                    query += searchClause;
+                    countQuery += searchClause;
+                    const sp = `%${search}%`;
+                    values.push(sp, sp, sp, sp);
+                }
+                
+                const { results: countResult } = await env.DB.prepare(countQuery).bind(...values).all();
+                const total = countResult[0].total;
+                
+                query += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+                const { results } = await env.DB.prepare(query).bind(...values, limit, offset).all();
+                
+                return json({ results, total });
             }
 
             if (path === '/api/customers' && method === 'POST') {
@@ -592,16 +624,48 @@ export default {
 
                 return json({ success: true });
             }
-
             // ====== LEDGER ======
             if (path === '/api/ledger' && method === 'GET') {
-                const { results } = await env.DB.prepare('SELECT * FROM ledger ORDER BY date DESC, id DESC').all();
-                return json(results.map(l => ({
+                const urlParams = new URL(request.url).searchParams;
+                const limit = parseInt(urlParams.get('limit')) || 20;
+                const offset = parseInt(urlParams.get('offset')) || 0;
+                const search = urlParams.get('search');
+                const type = urlParams.get('type');
+                
+                let query = 'SELECT * FROM ledger';
+                let countQuery = 'SELECT COUNT(*) as total FROM ledger';
+                let values = [];
+                let whereClauses = [];
+                
+                if (search) {
+                    whereClauses.push('(party LIKE ? OR category LIKE ? OR description LIKE ?)');
+                    const sp = `%${search}%`;
+                    values.push(sp, sp, sp);
+                }
+                if (type && type !== 'all') {
+                    whereClauses.push('type = ?');
+                    values.push(type);
+                }
+                
+                if (whereClauses.length > 0) {
+                    const whereStr = ' WHERE ' + whereClauses.join(' AND ');
+                    query += whereStr;
+                    countQuery += whereStr;
+                }
+                
+                const { results: countResult } = await env.DB.prepare(countQuery).bind(...values).all();
+                const total = countResult[0].total;
+                
+                query += ' ORDER BY date DESC, id DESC LIMIT ? OFFSET ?';
+                const { results } = await env.DB.prepare(query).bind(...values, limit, offset).all();
+                
+                const mappedResults = results.map(l => ({
                     id: l.id, type: l.type, category: l.category,
-                    description: l.description, amount: l.amount,
-                    date: l.date, reference: l.reference,
-                    created_by: l.created_by,
-                })));
+                    amount: l.amount, date: l.date, description: l.description,
+                    party: l.party, createdBy: l.created_by
+                }));
+                
+                return json({ results: mappedResults, total });
             }
 
             if (path === '/api/ledger' && method === 'POST') {

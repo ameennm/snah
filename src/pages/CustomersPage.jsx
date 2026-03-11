@@ -1,10 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiEye, FiFilter } from 'react-icons/fi';
 
 export default function CustomersPage() {
-    const { customers, orders, products, hasPermission, getProductById, updateCustomer, deleteCustomer, addCustomerAsync, api } = useApp();
+    const { orders, products, hasPermission, getProductById, updateCustomer, deleteCustomer, addCustomerAsync, api } = useApp();
+    const [customersData, setCustomersData] = useState([]);
+    const [totalCustomers, setTotalCustomers] = useState(0);
     const [search, setSearch] = useState('');
     const [filterProduct, setFilterProduct] = useState('all');
     const [filterType, setFilterType] = useState('all'); // 'all', 'repeated'
@@ -13,11 +15,30 @@ export default function CustomersPage() {
     const [editCustomer, setEditCustomer] = useState(null);
     const [viewHistory, setViewHistory] = useState(null);
     const [form, setForm] = useState({ name: '', phone: '', address: '', area: '' });
+    
+    // Pagination
+    const [page, setPage] = useState(1);
+    const PAGE_SIZE = 20;
+
+    useEffect(() => {
+        const timer = setTimeout(async () => {
+            const offset = (page - 1) * PAGE_SIZE;
+            try {
+                // To maintain full backend offloading, we pass limit, offset, and search manually.
+                const res = await api(`/customers?limit=${PAGE_SIZE}&offset=${offset}&search=${encodeURIComponent(search)}`);
+                setCustomersData(res.results || []);
+                setTotalCustomers(res.total || 0);
+            } catch (err) {
+                console.error("Failed to fetch customers", err);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [api, page, search]);
 
     // Precalculate customer stats
     const customerStats = useMemo(() => {
         const stats = {};
-        customers.forEach(c => {
+        customersData.forEach(c => {
             const cOrders = orders.filter(o => o.customerId === c.id);
             const totalSpent = cOrders.reduce((sum, o) => sum + (o.total || 0), 0);
             let totalQty = 0;
@@ -40,13 +61,12 @@ export default function CustomersPage() {
             };
         });
         return stats;
-    }, [customers, orders]);
+    }, [customersData, orders]);
 
     const sortedFiltered = useMemo(() => {
-        const q = search.toLowerCase();
-        let list = customers.filter(c => {
-            // Search
-            if (q && !c.name.toLowerCase().includes(q) && !c.phone.includes(q) && !(c.area || '').toLowerCase().includes(q)) return false;
+        // Since backend handles basic search, we only apply advanced filters locally
+        // Alternatively, advanced filters could be moved to the backend
+        let list = customersData.filter(c => {
 
             const stats = customerStats[c.id];
 
@@ -67,7 +87,7 @@ export default function CustomersPage() {
         if (sortBy === 'spent-desc') list.sort((a, b) => customerStats[b.id].totalSpent - customerStats[a.id].totalSpent);
 
         return list;
-    }, [customers, search, filterProduct, filterType, sortBy, customerStats]);
+    }, [customersData, filterProduct, filterType, sortBy, customerStats]);
 
     const openAdd = () => {
         setForm({ name: '', phone: '', address: '', area: '' });
@@ -141,7 +161,7 @@ export default function CustomersPage() {
             <div className="card">
                 <div className="card-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '1rem' }}>
                     <div className="flex justify-between items-center w-full">
-                        <h2>Customers ({sortedFiltered.length})</h2>
+                        <h2>Customers ({totalCustomers})</h2>
                         {hasPermission('addCustomer') && (
                             <button className="btn btn-primary" onClick={openAdd} id="add-customer-btn">
                                 <FiPlus /> Add Customer
@@ -264,6 +284,18 @@ export default function CustomersPage() {
                         </tbody>
                     </table>
                 </div>
+                {totalCustomers > PAGE_SIZE && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderTop: '1px solid var(--border-light)', background: 'white', borderBottomLeftRadius: 'var(--radius-lg)', borderBottomRightRadius: 'var(--radius-lg)' }}>
+                        <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
+                            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCustomers)} of {totalCustomers}
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Prev</button>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, padding: '0 8px' }}>Page {page} of {Math.ceil(totalCustomers / PAGE_SIZE)}</span>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.min(Math.ceil(totalCustomers / PAGE_SIZE), p + 1))} disabled={page === Math.ceil(totalCustomers / PAGE_SIZE)}>Next →</button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Add Modal */}

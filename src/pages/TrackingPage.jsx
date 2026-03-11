@@ -262,12 +262,9 @@ export default function TrackingPage() {
                         <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
                             Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
                         </span>
-                        <div style={{ display: 'flex', gap: '6px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Prev</button>
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                                <button key={p} className={`btn btn-sm ${p === page ? 'btn-primary' : 'btn-secondary'}`}
-                                    onClick={() => setPage(p)} style={{ minWidth: '32px' }}>{p}</button>
-                            ))}
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, padding: '0 8px' }}>Page {page} of {totalPages}</span>
                             <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
                         </div>
                     </div>
