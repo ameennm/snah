@@ -1,11 +1,11 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus, FiDollarSign, FiMessageCircle, FiTruck, FiRefreshCcw, FiEdit } from 'react-icons/fi';
 
 export default function OrdersPage() {
-    const { orders, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomerAsync, addOrder, updateOrder, deleteOrder, api, crmLeads } = useApp();
+    const { orders, ordersTotal, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomerAsync, addOrder, updateOrder, deleteOrder, api, crmLeads, searchOrders } = useApp();
     const [allUsers, setAllUsers] = useState([]);
 
     useEffect(() => {
@@ -23,6 +23,10 @@ export default function OrdersPage() {
     const [activeTab, setActiveTab] = useState('all');
     const [page, setPage] = useState(1);
     const PAGE_SIZE = 20;
+
+    // Duplicate warning states
+    const [duplicateWarning, setDuplicateWarning] = useState('');
+    const [acknowledgedWarning, setAcknowledgedWarning] = useState(false);
 
     // Return Modal
     const [showReturnModal, setShowReturnModal] = useState(null);
@@ -55,6 +59,20 @@ export default function OrdersPage() {
         api('/delivery_partners').then(res => setDeliveryPartners(res || [])).catch(() => { });
     }, []);
 
+    // Server-side search and pagination
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            searchOrders({
+                query: search,
+                page,
+                limit: PAGE_SIZE,
+                status: activeTab,
+                paymentStatus: paymentFilter
+            });
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [search, page, activeTab, paymentFilter, searchOrders]);
+
     // Auto-trigger redispatch if navigated here from Followups
     useEffect(() => {
         if (location.state?.redispatchOrder) {
@@ -64,7 +82,7 @@ export default function OrdersPage() {
             // Wait for deliveryPartners to load, then open
             setTimeout(() => openRedispatch(order), 100);
         }
-    }, [location.state]);
+    }, [location.state, navigate, location.pathname]);
 
     // Auto-match customer by phone
     const fullPhone = useMemo(() => {
@@ -78,30 +96,9 @@ export default function OrdersPage() {
         return customers.find((c) => c.phone.replace(/[^0-9]/g, '') === fullPhone);
     }, [fullPhone, customers]);
 
-    const filtered = orders
-        .filter((o) => {
-            if (activeTab === 'pending') return o.status === 'pending';
-            if (activeTab === 'shipped') return o.status === 'shipped';
-            if (activeTab === 'delivered') return o.status === 'delivered';
-            if (activeTab === 'returned') return o.status === 'returned';
-            if (activeTab === 'completed_deliveries') return o.status === 'shipped' || o.status === 'delivered';
-            return true;
-        })
-        .filter((o) => {
-            const customer = getCustomerById(o.customerId);
-            const matchesSearch =
-                o.id.toLowerCase().includes(search.toLowerCase()) ||
-                (customer?.name || '').toLowerCase().includes(search.toLowerCase()) ||
-                (customer?.phone || '').toLowerCase().includes(search.toLowerCase()) ||
-                (o.trackingId || '').toLowerCase().includes(search.toLowerCase());
-            const matchesPayment =
-                paymentFilter === 'all' || o.paymentStatus === paymentFilter;
-            return matchesSearch && matchesPayment;
-        })
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-    const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    const totalPages = Math.ceil((ordersTotal || 0) / PAGE_SIZE);
+    // Strictly enforce that we never render more than PAGE_SIZE items at once
+    const paginated = (orders || []).slice(0, PAGE_SIZE);
 
     const addItem = () => setOrderItems([...orderItems, { productId: '', quantity: 1 }]);
     const removeItem = (index) => setOrderItems(orderItems.filter((_, i) => i !== index));
@@ -148,6 +145,8 @@ export default function OrdersPage() {
         setOrderDate(new Date().toISOString().split('T')[0]);
         setTrackingId(''); setNewDeliveryPartner('');
         setEditOrderId(null);
+        setDuplicateWarning('');
+        setAcknowledgedWarning(false);
         setShowCreate(false);
     };
 
@@ -172,6 +171,24 @@ export default function OrdersPage() {
 
         if (items.length === 0) return;
 
+        // Duplicate Check Logic (Frontend Warning)
+        if (!editOrderId && !isRedispatch && !acknowledgedWarning) {
+            const checkDateStr = (orderDate ? new Date(orderDate) : new Date()).toISOString().split('T')[0]; // YYYY-MM-DD
+            
+            // Look for any order for this mobile number on the identical date
+            const existingOrderToday = orders.find(o => {
+                const oDate = new Date(o.createdAt).toISOString().split('T')[0];
+                const cust = getCustomerById(o.customerId);
+                return cust && cust.phone.replace(/[^0-9]/g, '') === fullPhone && oDate === checkDateStr;
+            });
+
+            if (existingOrderToday) {
+                setDuplicateWarning(`⚠️ Duplicate order detected for this number on ${checkDateStr.split('-').reverse().join('-')} (Order ${existingOrderToday.id}). Click Create Order again to proceed anyway.`);
+                setAcknowledgedWarning(true);
+                return; // Stop here and wait for second click
+            }
+        }
+
         const { subtotal, gstTotal, total } = calculateOrderTotal();
         const paidAmount = paymentStatus === 'paid' ? total : (paymentStatus === 'partial' ? Number(initialPaidAmount) || 0 : 0);
 
@@ -187,6 +204,9 @@ export default function OrdersPage() {
                 customerId = realCustomer.id;
             }
 
+            // Capture current edit ID before reset
+            const currentEditId = editOrderId;
+
             // Close modal immediately
             resetForm();
             setViewOrder(null);
@@ -201,8 +221,8 @@ export default function OrdersPage() {
                 createdAt: orderDate ? new Date(orderDate).toISOString() : new Date().toISOString()
             };
 
-            if (editOrderId) {
-                updateOrder(editOrderId, { ...payload, updatedBy: user.id });
+            if (currentEditId) {
+                updateOrder(currentEditId, { ...payload, updatedBy: user.id });
             } else {
                 addOrder({
                     ...payload,
@@ -215,7 +235,7 @@ export default function OrdersPage() {
                     }
                 }).catch(error => {
                     console.error('Order sync failed:', error);
-                    alert('Order could not be saved to server. Please refresh and try again.');
+                    alert(error.message || 'Order could not be saved to server. Please refresh and try again.');
                 });
             }
 
@@ -379,7 +399,7 @@ export default function OrdersPage() {
             <div className="card">
                 <div className="card-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '16px' }}>
                     <div className="flex justify-between" style={{ width: '100%', alignItems: 'center' }}>
-                        <h2>Orders ({filtered.length})</h2>
+                        <h2>Orders ({ordersTotal})</h2>
                         {hasPermission('createOrder') && (
                             <button className="btn btn-primary" onClick={() => setShowCreate(true)} id="create-order-btn">
                                 <FiPlus /> New Order
@@ -517,7 +537,7 @@ export default function OrdersPage() {
                                     </tr>
                                 );
                             })}
-                            {filtered.length === 0 && (
+                            {orders.length === 0 && (
                                 <tr><td colSpan={8}>
                                     <div className="empty-state">
                                         <div className="empty-state-icon">🛒</div>
@@ -532,14 +552,12 @@ export default function OrdersPage() {
                 {totalPages > 1 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: '1px solid var(--border-light)', background: 'var(--gray-50)' }}>
                         <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
-                            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} orders
+                            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, ordersTotal)} of {ordersTotal} orders
                         </span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                             <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Prev</button>
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                                <button key={p} className={`btn btn-sm ${p === page ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPage(p)}
-                                    style={{ minWidth: '32px' }}>{p}</button>
-                            ))}
+                            {/* Simple pagination: show current page and total */}
+                            <span style={{ display: 'flex', alignItems: 'center', px: '8px', fontSize: '0.9rem' }}>Page {page} of {totalPages}</span>
                             <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
                         </div>
                     </div>
@@ -623,12 +641,17 @@ export default function OrdersPage() {
                         <>
                             <button className="btn btn-secondary" onClick={resetForm}>Cancel</button>
                             <button className="btn btn-primary" onClick={() => handleCreateOrder()}
-                                disabled={!(matchedCustomer ? matchedCustomer.name : customerName) || !customerPhone || orderItems.filter(i => i.productId).length === 0} id="submit-order-btn">
-                                {editOrderId ? `Save Order — ${formatCurrency(total)}` : `Create Order — ${formatCurrency(total)}`}
+                                disabled={!(matchedCustomer ? matchedCustomer.name : customerName) || !customerPhone || orderItems.filter(i => i.productId).length === 0} id="submit-order-btn" style={duplicateWarning && !acknowledgedWarning ? { background: 'var(--danger-500)', borderColor: 'var(--danger-500)' } : {}}>
+                                {editOrderId ? `Save Order — ${formatCurrency(total)}` : (acknowledgedWarning ? `Confirm Duplicate — ${formatCurrency(total)}` : `Create Order — ${formatCurrency(total)}`)}
                             </button>
                         </>
                     }
                 >
+                    {duplicateWarning && (
+                        <div style={{ padding: '12px', background: '#fef2f2', color: '#991b1b', border: '1px solid #f87171', borderRadius: 'var(--radius-md)', marginBottom: '16px', fontWeight: 600 }}>
+                            {duplicateWarning}
+                        </div>
+                    )}
                     {/* Customer Selection */}
                     <div style={{ marginBottom: '20px' }}>
                         <div className="form-group">

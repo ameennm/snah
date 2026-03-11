@@ -42,102 +42,64 @@ function getDateRange(period, customFrom, customTo) {
 }
 
 export default function DashboardPage() {
-    const { orders, products, customers, ledger, getCustomerById, getProductById } = useApp();
+    const { orders, customers, getCustomerById, api } = useApp();
 
     // Date filter state
     const [period, setPeriod] = useState('all');
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [stats, setStats] = useState({
+        totalOrders: 0,
+        totalSales: 0,
+        totalExpenses: 0,
+        totalProducts: 0,
+        lowStockCount: 0,
+        productPerformance: []
+    });
 
     const { from, to } = useMemo(
         () => getDateRange(period, customFrom, customTo),
         [period, customFrom, customTo]
     );
 
-    // Filtered orders by date
-    const filteredOrders = useMemo(
-        () => orders.filter((o) => {
-            const d = new Date(o.createdAt);
-            return d >= from && d < to;
-        }),
-        [orders, from, to]
-    );
+    useEffect(() => {
+        setLoading(true);
+        let qs = `?period=${period}`;
+        if (period !== 'all') {
+            qs += `&from=${from.toISOString()}&to=${to.toISOString()}`;
+        }
+        api(`/dashboard-stats${qs}`)
+            .then(data => {
+                setStats(data);
+            })
+            .catch(console.error)
+            .finally(() => setLoading(false));
+    }, [period, from, to, api]);
 
-    // Filtered ledger by date
-    const filteredLedger = useMemo(
-        () => ledger.filter((l) => {
-            const d = new Date(l.date);
-            return d >= from && d < to;
-        }),
-        [ledger, from, to]
-    );
+    const totalProfit = stats.totalSales - stats.totalExpenses;
 
-    // Calculations - exclude returned orders
-    const activeOrders = filteredOrders.filter(o => o.status !== 'returned');
-    const returnedOrders = filteredOrders.filter(o => o.status === 'returned');
-    const totalOrders = filteredOrders.length;
-    // Calculate total orders revenue (paid amount) vs pure sales
-    const totalSales = activeOrders.reduce((sum, o) => sum + o.paidAmount, 0);
-
-    // Calculate total expenses from ledger
-    const totalExpenses = filteredLedger
-        .filter(l => l.type === 'expense')
-        .reduce((sum, l) => sum + l.amount, 0);
-
-    const totalProfit = totalSales - totalExpenses;
-
-    const totalProducts = products.length;
-    const lowStockProducts = products.filter((p) => p.stock <= 10);
-
-    // Product performance analysis
+    // Process top sellers for the UI
     const productPerformance = useMemo(() => {
-        const map = {};
-        activeOrders.forEach((o) => {
-            o.items.forEach((item) => {
-                const product = getProductById(item.productId);
-                if (!product) return;
-                if (!map[item.productId]) {
-                    map[item.productId] = {
-                        id: item.productId,
-                        name: product.name,
-                        unitsSold: 0,
-                        revenue: 0,
-                        stock: product.stock,
-                        orderCount: 0,
-                    };
-                }
-                map[item.productId].unitsSold += item.quantity;
-                map[item.productId].revenue += item.price * item.quantity;
-                map[item.productId].orderCount += 1;
-            });
-        });
-
-        const list = Object.values(map);
-
+        const perf = stats.productPerformance || [];
+        // Map product IDs to product names. The API relies on the frontend `products` or DB names, 
+        // actually the API just returns productId, soldQuantity, and revenue. Let's hydrate names from context or map. 
+        // We will just fetch products locally since we still load the `products` list in AppContext.
         return {
-            topSellers: [...list].sort((a, b) => b.unitsSold - a.unitsSold),
-            topRevenue: [...list].sort((a, b) => b.revenue - a.revenue),
-            lowPerformers: [...list].sort((a, b) => a.unitsSold - b.unitsSold),
+            topSellers: [...perf].sort((a, b) => b.soldQuantity - a.soldQuantity),
+            topRevenue: [...perf].sort((a, b) => b.revenue - a.revenue),
+            lowPerformers: [...perf].sort((a, b) => a.soldQuantity - b.soldQuantity),
         };
-    }, [filteredOrders, activeOrders, getProductById]);
+    }, [stats.productPerformance]);
 
-    // Recent orders
-    const recentOrders = [...filteredOrders]
+    // Recent orders just uses whatever 20 orders we already have locally, 
+    // since we only display 5. No need to query back to server.
+    const recentOrders = [...orders]
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
         .slice(0, 5);
 
-    // Monthly summary from orders
-    const monthlySales = {};
-    activeOrders.forEach((o) => {
-        const month = new Date(o.createdAt).toLocaleDateString('en-IN', {
-            month: 'short',
-            year: 'numeric',
-        });
-        monthlySales[month] = (monthlySales[month] || 0) + o.total;
-    });
-
     const formatCurrency = (val) =>
-        '₹' + Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        '₹' + Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const getPaymentBadge = (status) => {
         const map = {
@@ -221,32 +183,31 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* Stats */}
-            <div className="stats-grid">
-                <div className="stat-card">
-                    <div className="stat-icon blue">
-                        <FiShoppingCart />
+            {loading ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>Loading Dashboard...</div>
+            ) : (
+                <>
+                {/* Stats */}
+                <div className="stats-grid">
+                    <div className="stat-card">
+                        <div className="stat-icon blue">
+                            <FiShoppingCart />
+                        </div>
+                        <div className="stat-info">
+                            <div className="stat-label">Total Orders</div>
+                            <div className="stat-value">{stats.totalOrders}</div>
+                        </div>
                     </div>
-                    <div className="stat-info">
-                        <div className="stat-label">Total Orders</div>
-                        <div className="stat-value">{totalOrders}</div>
-                        {returnedOrders.length > 0 && (
-                            <div className="stat-change down">
-                                🔄 {returnedOrders.length} returned
-                            </div>
-                        )}
-                    </div>
-                </div>
 
-                <div className="stat-card">
-                    <div className="stat-icon green">
-                        <FiDollarSign />
+                    <div className="stat-card">
+                        <div className="stat-icon green">
+                            <FiDollarSign />
+                        </div>
+                        <div className="stat-info">
+                            <div className="stat-label">Total Sales</div>
+                            <div className="stat-value">{formatCurrency(stats.totalSales)}</div>
+                        </div>
                     </div>
-                    <div className="stat-info">
-                        <div className="stat-label">Total Sales</div>
-                        <div className="stat-value">{formatCurrency(totalSales)}</div>
-                    </div>
-                </div>
 
                 <div className="stat-card">
                     <div className="stat-icon yellow">
@@ -261,17 +222,16 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                {/* Products Summary Instead (Or left blank / refactored if we wanted to omit)  */}
                 <div className="stat-card">
                     <div className="stat-icon red">
                         <FiPackage />
                     </div>
                     <div className="stat-info">
                         <div className="stat-label">Total Products</div>
-                        <div className="stat-value">{totalProducts}</div>
-                        {lowStockProducts.length > 0 && (
+                        <div className="stat-value">{stats.totalProducts}</div>
+                        {stats.lowStockCount > 0 && (
                             <div className="stat-change down">
-                                <FiAlertTriangle size={12} /> {lowStockProducts.length} low stock
+                                <FiAlertTriangle size={12} /> {stats.lowStockCount} low stock
                             </div>
                         )}
                     </div>
@@ -338,43 +298,25 @@ export default function DashboardPage() {
                                     <th>Product</th>
                                     <th>Units Sold</th>
                                     <th>Revenue</th>
-                                    <th>Stock</th>
-                                    <th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {/* Show products with fewest sales, and also products with 0 sales */}
-                                {products.map((product) => {
-                                    const perf = productPerformance.topSellers.find((p) => p.id === product.id);
-                                    const unitsSold = perf ? perf.unitsSold : 0;
-                                    const revenue = perf ? perf.revenue : 0;
-                                    return { ...product, unitsSold, revenue };
-                                })
-                                    .sort((a, b) => a.unitsSold - b.unitsSold)
+                                {/* Show products with fewest sales */}
+                                {productPerformance.lowPerformers
                                     .slice(0, 5)
-                                    .map((p) => (
-                                        <tr key={p.id}>
-                                            <td className="font-bold">{p.name}</td>
-                                            <td>{p.unitsSold}</td>
-                                            <td>{formatCurrency(p.revenue)}</td>
-                                            <td>
-                                                <span className={`badge ${p.stock <= 10 ? 'badge-low-stock' : 'badge-in-stock'}`}>
-                                                    {p.stock}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                {p.unitsSold === 0 ? (
-                                                    <span className="badge badge-unpaid">No Sales</span>
-                                                ) : p.unitsSold <= 2 ? (
-                                                    <span className="badge badge-partial">Slow</span>
-                                                ) : (
-                                                    <span className="badge badge-pending">Average</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    .map((p) => {
+                                        const product = useApp().products.find(prod => prod.id === p.productId) || { name: 'Unknown', stock: 0 };
+                                        return (
+                                            <tr key={p.productId}>
+                                                <td className="font-bold">{product.name}</td>
+                                                <td>{p.soldQuantity}</td>
+                                                <td>{formatCurrency(p.revenue)}</td>
+                                            </tr>
+                                        );
+                                    })}
                             </tbody>
                         </table>
+
                     </div>
                 </div>
 
@@ -432,7 +374,8 @@ export default function DashboardPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {lowStockProducts.map((p) => (
+                                {/* Low Stock Alert Table logic replaced by backend simple count, if needed we can fetch low stock products separately. For now just show active generic products to prevent errors. */}
+                                {useApp().products.filter(p => p.stock <= 10).map((p) => (
                                     <tr key={p.id}>
                                         <td>{p.name}</td>
                                         <td>
@@ -441,7 +384,7 @@ export default function DashboardPage() {
                                         <td>{formatCurrency(p.sellingPrice)}</td>
                                     </tr>
                                 ))}
-                                {lowStockProducts.length === 0 && (
+                                {stats.lowStockCount === 0 && (
                                     <tr>
                                         <td colSpan={3} className="text-center text-muted">
                                             All products are well-stocked
@@ -453,6 +396,8 @@ export default function DashboardPage() {
                     </div>
                 </div>
             </div>
+            </>
+            )}
         </>
     );
 }

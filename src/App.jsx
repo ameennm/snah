@@ -58,7 +58,11 @@ function ProtectedRoute({ children, permission }) {
     return <Navigate to="/login" replace />;
   }
 
-  return children;
+  return (
+    <Suspense fallback={<PageLoader />}>
+      {children}
+    </Suspense>
+  );
 }
 
 function AppRoutes() {
@@ -75,9 +79,7 @@ function AppRoutes() {
   };
 
   return (
-    // Suspense wraps all routes — spinner shown while any lazy page chunk loads
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
+    <Routes>
         <Route
           path="/login"
           element={user ? <Navigate to={getDefaultRoute()} replace /> : <LoginPage />}
@@ -102,7 +104,6 @@ function AppRoutes() {
         </Route>
         <Route path="*" element={<Navigate to={getDefaultRoute()} replace />} />
       </Routes>
-    </Suspense>
   );
 }
 

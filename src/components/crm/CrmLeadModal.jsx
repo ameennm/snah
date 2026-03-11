@@ -32,7 +32,7 @@ const EMPTY = {
     payment_status: 'pending', amount: '', paid_amount: '',
 };
 
-export default function CrmLeadModal({ lead, onClose, onSave, crmLeads = [] }) {
+export default function CrmLeadModal({ lead, onClose, onSave, crmLeads = [], allUsers = [] }) {
     const { products } = useApp();
     const [form, setForm] = useState(EMPTY);
     const [callDate, setCallDate] = useState(fmt(todayAt5pm()));

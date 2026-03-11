@@ -166,6 +166,69 @@ export default {
                 return json({ success: true });
             }
 
+            // ====== DASHBOARD AGGREGATES ======
+            if (path === '/api/dashboard-stats' && method === 'GET') {
+                const urlParams = new URL(request.url).searchParams;
+                const period = urlParams.get('period') || 'all'; // 'today', 'week', 'month', 'custom', 'all'
+                const customFrom = urlParams.get('from');
+                const customTo = urlParams.get('to');
+                
+                // Build date logic
+                let whereClause = '';
+                let whereParams = [];
+                
+                if (period !== 'all') {
+                    // Dates from frontend come in as ISO or YYYY-MM-DD
+                    whereClause = ' WHERE created_at >= ? AND created_at < ?';
+                    whereParams = [customFrom, customTo];
+                }
+
+                // Get Total Orders (excluding returned)
+                const ordersQuery = period === 'all' 
+                    ? "SELECT COUNT(id) as totalOrders, SUM(paid_amount) as totalSales FROM orders WHERE status != 'returned'"
+                    : "SELECT COUNT(id) as totalOrders, SUM(paid_amount) as totalSales FROM orders WHERE status != 'returned' AND created_at >= ? AND created_at < ?";
+                
+                const ordersResult = await env.DB.prepare(ordersQuery).bind(...whereParams).first() || { totalOrders: 0, totalSales: 0 };
+                
+                // Get Total Expenses (Ledger)
+                const expenseQuery = period === 'all'
+                    ? "SELECT SUM(amount) as totalExpenses FROM ledger WHERE type = 'expense'"
+                    : "SELECT SUM(amount) as totalExpenses FROM ledger WHERE type = 'expense' AND date >= ? AND date < ?";
+                
+                // Ledger uses YYYY-MM-DD for date, so we need to slice the ISO strings if we pass ISO
+                const ledgerParams = whereParams.map(p => p.split('T')[0]);
+                const expenseResult = await env.DB.prepare(expenseQuery).bind(...ledgerParams).first() || { totalExpenses: 0 };
+
+                // Get product counts
+                const productsResult = await env.DB.prepare('SELECT COUNT(id) as total FROM products').first();
+                const lowStockResult = await env.DB.prepare('SELECT COUNT(id) as lowStock FROM products WHERE stock <= 10').first();
+
+                // Compute product performance
+                // For performance over large datasets, doing GROUP BY on order_items joined with orders
+                const perfQuery = period === 'all'
+                    ? `SELECT oi.product_id as productId, SUM(oi.quantity) as soldQuantity, SUM(oi.quantity * oi.price) as revenue 
+                       FROM order_items oi 
+                       JOIN orders o ON oi.order_id = o.id 
+                       WHERE o.status != 'returned' 
+                       GROUP BY oi.product_id`
+                    : `SELECT oi.product_id as productId, SUM(oi.quantity) as soldQuantity, SUM(oi.quantity * oi.price) as revenue 
+                       FROM order_items oi 
+                       JOIN orders o ON oi.order_id = o.id 
+                       WHERE o.status != 'returned' AND o.created_at >= ? AND o.created_at < ?
+                       GROUP BY oi.product_id`;
+                       
+                const { results: perfResults } = await env.DB.prepare(perfQuery).bind(...whereParams).all();
+
+                return json({
+                    totalOrders: ordersResult.totalOrders || 0,
+                    totalSales: ordersResult.totalSales || 0,
+                    totalExpenses: expenseResult.totalExpenses || 0,
+                    totalProducts: productsResult.total || 0,
+                    lowStockCount: lowStockResult.lowStock || 0,
+                    productPerformance: perfResults || []
+                });
+            }
+
             // ====== CUSTOMERS ======
             if (path === '/api/customers' && method === 'GET') {
                 const { results } = await env.DB.prepare('SELECT * FROM customers ORDER BY id DESC').all();
@@ -244,8 +307,70 @@ export default {
 
             // ====== ORDERS ======
             if (path === '/api/orders' && method === 'GET') {
-                const { results: orders } = await env.DB.prepare('SELECT * FROM orders ORDER BY created_at DESC').all();
-                const { results: allItems } = await env.DB.prepare('SELECT * FROM order_items').all();
+                const urlParams = new URL(request.url).searchParams;
+                const limit = parseInt(urlParams.get('limit')) || 1000;
+                const offset = parseInt(urlParams.get('offset')) || 0;
+                const search = urlParams.get('search');
+                const role = urlParams.get('role');
+                const status = urlParams.get('status');
+                const paymentStatus = urlParams.get('paymentStatus'); // 'all', 'paid', 'not_paid', 'partial'
+
+                let query = 'SELECT o.* FROM orders o';
+                let values = [];
+                let whereClauses = [];
+
+                if (search) {
+                    query += ' LEFT JOIN customers c ON o.customer_id = c.id';
+                    whereClauses.push('(o.id LIKE ? OR o.tracking_id LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)');
+                    const searchPattern = `%${search}%`;
+                    values.push(searchPattern, searchPattern, searchPattern, searchPattern);
+                }
+
+                if (status && status !== 'all') {
+                    if (status === 'completed_deliveries') {
+                        whereClauses.push("(o.status = 'shipped' OR o.status = 'delivered')");
+                    } else {
+                        whereClauses.push("o.status = ?");
+                        values.push(status);
+                    }
+                }
+
+                if (paymentStatus && paymentStatus !== 'all') {
+                    whereClauses.push("o.payment_status = ?");
+                    values.push(paymentStatus);
+                }
+
+                // If non-admin employee, default to a smaller limit if not specified
+                // The user requested 30 for employees
+                let finalLimit = limit;
+                if (role && role !== 'super_admin' && !urlParams.has('limit')) {
+                    finalLimit = 30;
+                }
+
+                let finalQuery = query;
+                if (whereClauses.length > 0) {
+                    finalQuery += ' WHERE ' + whereClauses.join(' AND ');
+                }
+                
+                // Get Total Count for pagination
+                let countQuery = 'SELECT COUNT(*) as total FROM orders o';
+                if (search) countQuery += ' LEFT JOIN customers c ON o.customer_id = c.id';
+                if (whereClauses.length > 0) countQuery += ' WHERE ' + whereClauses.join(' AND ');
+                const { results: countResult } = await env.DB.prepare(countQuery).bind(...values).all();
+                const total = countResult[0].total;
+
+                finalQuery += ' ORDER BY o.created_at DESC LIMIT ? OFFSET ?';
+                const finalValues = [...values, finalLimit, offset];
+
+                const { results: orders } = await env.DB.prepare(finalQuery).bind(...finalValues).all();
+
+                if (orders.length === 0) return json({ results: [], total });
+
+                // Fetch items only for these specific orders to save reads
+                const orderIds = orders.map(o => o.id);
+                const placeholders = orderIds.map(() => '?').join(',');
+                const { results: items } = await env.DB.prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders})`).bind(...orderIds).all();
+
                 const mapped = orders.map(o => ({
                     id: o.id, customerId: o.customer_id, crmLeadId: o.crm_lead_id || null, subtotal: o.subtotal,
                     discount: o.discount || 0, discountType: o.discount_type || 'flat',
@@ -258,11 +383,11 @@ export default {
                     shippedDate: o.shipped_date || null,
                     deliveredDate: o.delivered_date || null,
                     createdAt: o.created_at, createdBy: o.created_by,
-                    items: allItems.filter(i => i.order_id === o.id).map(i => ({
+                    items: items.filter(i => i.order_id === o.id).map(i => ({
                         productId: i.product_id, quantity: i.quantity, price: i.price, gst: i.gst,
                     })),
                 }));
-                return json(mapped);
+                return json({ results: mapped, total });
             }
 
             if (path === '/api/orders' && method === 'POST') {
@@ -285,6 +410,8 @@ export default {
                 const mm = String(bodyCreatedAt ? orderDateStr.getUTCMonth() + 1 : orderDateStr.getUTCMonth() + 1).padStart(2, '0');
                 const yyyy = bodyCreatedAt ? orderDateStr.getUTCFullYear() : orderDateStr.getUTCFullYear();
                 const datePrefix = `${dd}-${mm}-${yyyy}`; // e.g. "07-03-2026"
+
+                // Duplicate check moved to frontend as a soft warning. Backend no longer blocks.
 
                 // Find the highest sequence number already used today
                 // Date prefix is 10 chars, dash is char 11, sequence starts at char 12
@@ -506,34 +633,178 @@ export default {
                 await logActivity(env, updatedBy, 'update', 'ledger', id, `Updated ledger entry ₹${amount}`);
                 return json({ success: true });
             }
+            // ====== CRM DASHBOARD AGGREGATES ======
+            if (path === '/api/crm/dashboard-stats' && method === 'GET') {
+                const urlParams = new URL(request.url).searchParams;
+                const empFilter = urlParams.get('empFilter'); // Specific employee ID if provided
+                
+                let baseWhere = '1=1';
+                let params = [];
+                
+                if (empFilter) {
+                    baseWhere = '(created_by = ? OR closer_id = ? OR assigned_to = ?)';
+                    params = [empFilter, empFilter, empFilter];
+                }
+                
+                // Get core lead states for the whole funnel
+                const query = `
+                    SELECT 
+                        COUNT(id) as totalLeads,
+                        SUM(CASE WHEN converted = 1 THEN 1 ELSE 0 END) as totalClosed,
+                        SUM(CASE WHEN status = 'hot' THEN 1 ELSE 0 END) as hot,
+                        SUM(CASE WHEN status = 'warm' THEN 1 ELSE 0 END) as warm,
+                        SUM(CASE WHEN status = 'cold' THEN 1 ELSE 0 END) as cold,
+                        SUM(CASE WHEN status = 'not-interested' THEN 1 ELSE 0 END) as notInterested,
+                        SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid,
+                        SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END) as pending
+                    FROM crm_leads
+                    WHERE ${baseWhere}
+                `;
+                
+                const stats = await env.DB.prepare(query).bind(...params).first() || {};
+                
+                // Get employee performance stats if we're looking at overall picture
+                let employeeStats = [];
+                if (!empFilter) {
+                    const empQuery = `
+                        SELECT 
+                            u.id, 
+                            u.name, 
+                            u.role,
+                            COUNT(l_created.id) as leadsEntered,
+                            COUNT(l_closed.id) as leadsClosed
+                        FROM users u
+                        LEFT JOIN crm_leads l_created ON l_created.created_by = u.id
+                        LEFT JOIN crm_leads l_closed ON l_closed.closer_id = u.id AND l_closed.converted = 1
+                        WHERE u.role != 'super_admin' AND u.status = 'active'
+                        GROUP BY u.id, u.name, u.role
+                        ORDER BY leadsClosed DESC
+                    `;
+                    const { results } = await env.DB.prepare(empQuery).all();
+                    
+                    employeeStats = results.map(emp => {
+                        const entered = emp.leadsEntered || 0;
+                        const closed = emp.leadsClosed || 0;
+                        return {
+                            id: emp.id,
+                            name: emp.name,
+                            role: emp.role,
+                            leadsEntered: entered,
+                            leadsClosed: closed,
+                            conversionRate: entered > 0 ? ((closed / entered) * 100).toFixed(1) : 0
+                        };
+                    });
+                }
+                
+                return json({
+                    totalLeads: stats.totalLeads || 0,
+                    totalClosed: stats.totalClosed || 0,
+                    breakdown: {
+                        hot: stats.hot || 0,
+                        warm: stats.warm || 0,
+                        cold: stats.cold || 0,
+                        notInterested: stats.notInterested || 0,
+                        paid: stats.paid || 0,
+                        pending: stats.pending || 0
+                    },
+                    employeeStats
+                });
+            }
 
             // ====== CRM LEADS ======
             if (path === '/api/crm/leads' && method === 'GET') {
                 const urlParams = new URL(request.url).searchParams;
                 const userId = urlParams.get('userId');
                 const userRole = urlParams.get('role');
+                const search = urlParams.get('search');
+                const tab = urlParams.get('tab'); // 'my-leads', 'passing-in', 'passing-out'
+                const status = urlParams.get('status'); // 'active', 'all', 'hot', 'warm', 'cold', 'not-interested'
+                const payStatus = urlParams.get('payStatus'); // 'all', 'pending', 'paid'
+                const starredOnly = urlParams.get('starredOnly') === 'true';
+                const empFilter = urlParams.get('empFilter'); // userId for admins
+                const limit = parseInt(urlParams.get('limit')) || 20;
+                const offset = parseInt(urlParams.get('offset')) || 0;
                 const isAdmin = userRole === 'super_admin';
+
+                // For non-admin employees, cap at 30 if no explicit limit given
+                let finalLimit = limit;
+                if (!isAdmin && !urlParams.has('limit')) {
+                    finalLimit = 30;
+                }
 
                 let query = 'SELECT * FROM crm_leads';
                 let values = [];
+                let whereClauses = [];
 
                 if (!isAdmin && userId) {
-                    query += ' WHERE (created_by = ? AND (is_passed = 0 OR is_passed IS NULL)) OR (assigned_to = ? AND is_passed = 1)';
-                    values.push(userId, userId);
+                    // Logic from frontend CrmLeadsPage.jsx
+                    if (tab === 'passing-in') {
+                        whereClauses.push('is_passed = 1 AND assigned_to = ?');
+                        values.push(userId);
+                    } else if (tab === 'passing-out') {
+                        whereClauses.push('is_passed = 1 AND passed_from = ?');
+                        values.push(userId);
+                    } else {
+                        // 'my-leads'
+                        whereClauses.push('((assigned_to = ? AND (is_passed = 1 OR is_passed = 0 OR is_passed IS NULL)) OR (created_by = ? AND (is_passed = 0 OR is_passed IS NULL)))');
+                        values.push(userId, userId);
+                    }
                 }
 
-                query += ' ORDER BY created_at DESC';
+                if (isAdmin && empFilter && empFilter !== 'all') {
+                    const empId = parseInt(empFilter);
+                    whereClauses.push('(created_by = ? OR assigned_to = ?)');
+                    values.push(empId, empId);
+                }
 
-                const { results } = await env.DB.prepare(query).bind(...values).all();
-                return json(results.map(l => ({
-                    ...l,
-                    interested_products: (() => { try { return JSON.parse(l.interested_products || '[]'); } catch { return []; } })(),
-                    lead_products: (() => { try { return JSON.parse(l.lead_products || '[]'); } catch { return []; } })(),
-                    sent_messages: (() => { try { return JSON.parse(l.sent_messages || '[]'); } catch { return []; } })(),
-                    is_starred: l.is_starred === 1,
-                    is_passed: l.is_passed === 1,
-                    converted: l.converted === 1,
-                })));
+                if (status === 'active') {
+                    whereClauses.push("status != 'not-interested'");
+                } else if (status && status !== 'all') {
+                    whereClauses.push("status = ?");
+                    values.push(status);
+                }
+
+                if (payStatus && payStatus !== 'all') {
+                    whereClauses.push("payment_status = ?");
+                    values.push(payStatus);
+                }
+
+                if (starredOnly) {
+                    whereClauses.push("is_starred = 1");
+                }
+
+                if (search) {
+                    whereClauses.push('(name LIKE ? OR whatsapp LIKE ? OR location LIKE ?)');
+                    const searchPattern = `%${search}%`;
+                    values.push(searchPattern, searchPattern, searchPattern);
+                }
+
+                if (whereClauses.length > 0) {
+                    query += ' WHERE ' + whereClauses.join(' AND ');
+                }
+
+                // Get Total Count
+                let countQuery = 'SELECT COUNT(*) as total FROM crm_leads';
+                if (whereClauses.length > 0) countQuery += ' WHERE ' + whereClauses.join(' AND ');
+                const { results: countResult } = await env.DB.prepare(countQuery).bind(...values).all();
+                const total = countResult[0].total;
+
+                query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+                const finalValues = [...values, finalLimit, offset];
+
+                const { results } = await env.DB.prepare(query).bind(...finalValues).all();
+                return json({
+                    results: results.map(l => ({
+                        ...l,
+                        interested_products: (() => { try { return JSON.parse(l.interested_products || '[]'); } catch { return []; } })(),
+                        lead_products: (() => { try { return JSON.parse(l.lead_products || '[]'); } catch { return []; } })(),
+                        sent_messages: (() => { try { return JSON.parse(l.sent_messages || '[]'); } catch { return []; } })(),
+                        is_starred: l.is_starred === 1,
+                        is_passed: l.is_passed === 1,
+                        converted: l.converted === 1,
+                    })),
+                    total
+                });
             }
 
             if (path === '/api/crm/leads' && method === 'POST') {

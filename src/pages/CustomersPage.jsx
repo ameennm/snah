@@ -202,7 +202,24 @@ export default function CustomersPage() {
                                 return (
                                     <tr key={c.id}>
                                         <td data-label="#">{i + 1}</td>
-                                        <td data-label="Name" className="font-bold">{c.name}</td>
+                                        <td data-label="Name" className="font-bold">
+                                            <button
+                                                className="link-button"
+                                                onClick={() => setViewHistory(c)}
+                                                style={{
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    padding: 0,
+                                                    color: 'inherit',
+                                                    font: 'inherit',
+                                                    cursor: 'pointer',
+                                                    textAlign: 'left'
+                                                }}
+                                                title="View Order History"
+                                            >
+                                                {c.name}
+                                            </button>
+                                        </td>
                                         <td data-label="Phone & Area">
                                             <div className="font-mono">{c.phone}</div>
                                             <div className="text-secondary" style={{ fontSize: '0.8rem' }}>{c.area}</div>

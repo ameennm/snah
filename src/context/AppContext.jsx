@@ -12,8 +12,10 @@ const initialState = {
     customers: [],
     products: [],
     orders: [],
+    ordersTotal: 0,
     ledger: [],
     crmLeads: [],
+    crmLeadsTotal: 0,
     sidebarOpen: false,
     loading: !!savedUser,
 };
@@ -43,7 +45,11 @@ function appReducer(state, action) {
         case 'SET_PRODUCTS':
             return { ...state, products: action.payload };
         case 'SET_ORDERS':
-            return { ...state, orders: action.payload };
+            return { 
+                ...state, 
+                orders: action.payload?.results || (Array.isArray(action.payload) ? action.payload : []), 
+                ordersTotal: action.payload?.total || (Array.isArray(action.payload) ? action.payload.length : (state.ordersTotal || 0)) 
+            };
         case 'SET_LEDGER':
             return { ...state, ledger: action.payload };
 
@@ -113,7 +119,11 @@ function appReducer(state, action) {
 
         // CRM Leads
         case 'SET_CRM_LEADS':
-            return { ...state, crmLeads: action.payload };
+            return { 
+                ...state, 
+                crmLeads: action.payload?.results || (Array.isArray(action.payload) ? action.payload : []), 
+                crmLeadsTotal: action.payload?.total || (Array.isArray(action.payload) ? action.payload.length : (state.crmLeadsTotal || 0))
+            };
         case 'ADD_CRM_LEAD':
             return { ...state, crmLeads: [action.payload, ...state.crmLeads] };
         case 'UPDATE_CRM_LEAD':
@@ -128,8 +138,8 @@ function appReducer(state, action) {
     }
 }
 
-// API helper
-export async function api(endpoint, options = {}) {
+// API helper — unexported to fix Vite Fast Refresh (React components should not export functions)
+async function api(endpoint, options = {}) {
     const res = await fetch(`${API_BASE}${endpoint}`, {
         headers: { 'Content-Type': 'application/json' },
         ...options,
@@ -151,10 +161,10 @@ export function AppProvider({ children }) {
                 dataLoaded.current = true;
                 loadAllData();
             }
-            // Auto refresh every 5 seconds to provide fast data updates
+            // Auto refresh every 60 seconds to reduce database row reads
             intervalId = setInterval(() => {
                 loadAllData(true);
-            }, 5000);
+            }, 60000);
         } else {
             dataLoaded.current = false;
         }
@@ -167,18 +177,27 @@ export function AppProvider({ children }) {
     const loadAllData = async (isBackground = false) => {
         if (!isBackground) dispatch({ type: 'SET_LOADING', payload: true });
         try {
-            const [customers, products, orders, ledger, crmLeads] = await Promise.all([
+            // Only load cross-page data centrally.
+            // Orders and CRM leads are managed by their own pages to avoid overwriting pagination state.
+            const [customers, products, ledger] = await Promise.all([
                 api('/customers'),
                 api('/products'),
-                api('/orders'),
                 api('/ledger'),
-                api(`/crm/leads?userId=${state.user?.id || ''}&role=${state.user?.role || ''}`),
             ]);
             dispatch({ type: 'SET_CUSTOMERS', payload: customers });
             dispatch({ type: 'SET_PRODUCTS', payload: products });
-            dispatch({ type: 'SET_ORDERS', payload: orders });
             dispatch({ type: 'SET_LEDGER', payload: ledger });
-            dispatch({ type: 'SET_CRM_LEADS', payload: crmLeads });
+
+            // On first load only, seed the orders and leads with page 1 so the 
+            // pages have data to show before their own useEffect fires.
+            if (!isBackground) {
+                const [ordersData, crmLeadsData] = await Promise.all([
+                    api(`/orders?role=${state.user?.role || ''}&limit=20&offset=0`),
+                    api(`/crm/leads?userId=${state.user?.id || ''}&role=${state.user?.role || ''}&limit=20&offset=0&tab=my-leads&status=active`),
+                ]);
+                dispatch({ type: 'SET_ORDERS', payload: ordersData });
+                dispatch({ type: 'SET_CRM_LEADS', payload: crmLeadsData });
+            }
         } catch (err) {
             console.error('Failed to load data:', err);
         }
@@ -382,6 +401,23 @@ export function AppProvider({ children }) {
         }
     }, [state.user?.id]);
 
+    const searchOrders = useCallback(async (filters = {}) => {
+        const { query = '', page = 1, limit = 20, status = 'all', paymentStatus = 'all' } = filters;
+        const offset = (page - 1) * limit;
+        const results = await api(`/orders?role=${state.user?.role || ''}&search=${encodeURIComponent(query)}&status=${status}&paymentStatus=${paymentStatus}&limit=${limit}&offset=${offset}`);
+        dispatch({ type: 'SET_ORDERS', payload: results });
+        return results;
+    }, [state.user?.role]);
+
+    const searchCrmLeads = useCallback(async (filters = {}) => {
+        const { query = '', page = 1, limit = 20, tab = 'my-leads', status = 'active', payStatus = 'all', starredOnly = false, empFilter = 'all' } = filters;
+        const offset = (page - 1) * limit;
+        const url = `/crm/leads?userId=${state.user?.id || ''}&role=${state.user?.role || ''}&search=${encodeURIComponent(query)}&tab=${tab}&status=${status}&payStatus=${payStatus}&starredOnly=${starredOnly}&empFilter=${empFilter}&limit=${limit}&offset=${offset}`;
+        const results = await api(url);
+        dispatch({ type: 'SET_CRM_LEADS', payload: results });
+        return results;
+    }, [state.user?.id, state.user?.role]);
+
     // ====== HELPERS ======
     const getCustomerById = useCallback(
         (id) => state.customers.find(c => c.id === id),
@@ -400,9 +436,11 @@ export function AppProvider({ children }) {
 
     const value = {
         ...state,
-        dispatch,
-        login,
-        logout,
+        orders: state.orders,
+        ordersTotal: state.ordersTotal,
+        ledger: state.ledger,
+        crmLeads: state.crmLeads,
+        crmLeadsTotal: state.crmLeadsTotal,
         hasPermission,
         addCustomer,
         addCustomerAsync,
@@ -420,6 +458,8 @@ export function AppProvider({ children }) {
         addCrmLead,
         updateCrmLead,
         deleteCrmLead,
+        searchOrders,
+        searchCrmLeads,
         getCustomerById,
         getProductById,
         getOrdersForCustomer,

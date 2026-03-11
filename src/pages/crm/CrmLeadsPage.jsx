@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import CrmLeadModal from '../../components/crm/CrmLeadModal';
 import CrmLeadDetailModal from '../../components/crm/CrmLeadDetailModal';
@@ -8,7 +8,7 @@ import { showToast } from '../../components/crm/CrmToast';
 const STATUS_LABELS = { 'hot': '🔥 Hot', 'warm': '🌡️ Warm', 'cold': '🧊 Cold', 'not-interested': '👎 Not Interested' };
 
 export default function CrmLeadsPage() {
-    const { crmLeads, products, addCrmLead, updateCrmLead, deleteCrmLead, addOrder, addCustomerAsync, customers, user, api } = useApp();
+    const { crmLeads, crmLeadsTotal, products, addCrmLead, updateCrmLead, deleteCrmLead, addOrder, addCustomerAsync, customers, user, api, searchCrmLeads } = useApp();
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('active');
     const [payFilter, setPayFilter] = useState('all');
@@ -24,6 +24,8 @@ export default function CrmLeadsPage() {
     const [allUsers, setAllUsers] = useState([]); // For lookups
     const [tab, setTab] = useState('my-leads'); // 'my-leads', 'passing-in', 'passing-out'
     const [empFilter, setEmpFilter] = useState('all');
+    const [page, setPage] = useState(1);
+    const PAGE_SIZE = 20;
 
     useEffect(() => {
         api('/users').then(data => {
@@ -40,47 +42,27 @@ export default function CrmLeadsPage() {
         }).catch(console.error);
     }, [user, api]);
 
-    const getProductNames = (ids = []) => ids.map(id => products.find(p => p.id === id || p.id === parseInt(id))?.name).filter(Boolean);
+    // Server-side search and pagination
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            searchCrmLeads({
+                query: search,
+                page,
+                limit: PAGE_SIZE,
+                tab,
+                status: statusFilter,
+                payStatus: payFilter,
+                starredOnly,
+                empFilter
+            });
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [search, page, tab, statusFilter, payFilter, starredOnly, empFilter, searchCrmLeads]);
 
-    const sorted = useMemo(() => {
-        const q = search.toLowerCase();
-        let list = crmLeads.filter(l => {
-            // Filter by tab
-            if (tab === 'my-leads') {
-                if (user?.role === 'super_admin') return true; // Super admins see all in "My Leads"
-                if (l.is_passed && l.assigned_to === user.id) return true; // Include leads passed TO me
-                if (l.is_passed && l.passed_from === user.id) return false; // Exclude leads I passed TO others
-            } else if (tab === 'passing-in') {
-                if (!l.is_passed || l.assigned_to !== user.id) return false;
-            } else if (tab === 'passing-out') {
-                if (!l.is_passed || l.passed_from !== user.id) return false;
-            }
-
-            // Admin employee filter
-            if (user?.role === 'super_admin' && empFilter !== 'all') {
-                const empId = parseInt(empFilter);
-                if (l.created_by !== empId && l.assigned_to !== empId) return false;
-            }
-
-            if (q && !l.name.toLowerCase().includes(q) && !l.whatsapp.includes(q) && !(l.location || '').toLowerCase().includes(q)) return false;
-            if (starredOnly && !l.is_starred) return false;
-            if (statusFilter === 'active' && l.status === 'not-interested') return false;
-            if (statusFilter !== 'active' && statusFilter !== 'all' && l.status !== statusFilter) return false;
-            if (payFilter === 'pending' && l.payment_status !== 'pending') return false;
-            if (payFilter === 'paid' && l.payment_status !== 'paid') return false;
-            return true;
-        });
-        if (sortBy === 'newest') list = [...list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        if (sortBy === 'oldest') list = [...list].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        if (sortBy === 'amount-high') list = [...list].sort((a, b) => (b.amount || 0) - (a.amount || 0));
-        if (sortBy === 'amount-low') list = [...list].sort((a, b) => (a.amount || 0) - (b.amount || 0));
-        if (sortBy === 'name') list = [...list].sort((a, b) => a.name.localeCompare(b.name));
-        if (sortBy === 'call') list = [...list].sort((a, b) => {
-            if (!a.next_call_date) return 1; if (!b.next_call_date) return -1;
-            return new Date(a.next_call_date) - new Date(b.next_call_date);
-        });
-        return list;
-    }, [crmLeads, search, statusFilter, payFilter, starredOnly, sortBy, tab, user, empFilter]);
+    const totalPages = Math.ceil((crmLeadsTotal || 0) / PAGE_SIZE);
+    
+    // Strictly enforce that we never render more than PAGE_SIZE items at once
+    const currentLeads = (crmLeads || []).slice(0, PAGE_SIZE);
 
     const handleSave = (data) => {
         // Duplicate mobile number check (only when creating a new lead)
@@ -99,24 +81,12 @@ export default function CrmLeadsPage() {
         if (editingLead) {
             updateCrmLead({ ...editingLead, ...data, updatedBy: user.id });
             showToast('Lead updated!');
-
-            // Auto convert if payment was marked as paid and not already converted
-            if (data.payment_status === 'paid' && !editingLead.converted) {
-                convertToOrder({ ...editingLead, ...data });
-            }
         }
         else {
             addCrmLead({ ...data, createdBy: user.id });
             showToast('Lead added!');
-
-            // Auto convert if new lead is added as paid
-            if (data.payment_status === 'paid') {
-                // Wait a bit for the lead to be added to state or pass dummy lead
-                convertToOrder({ ...data, createdBy: user.id });
-            }
         }
         setShowModal(false); setEditingLead(null);
-
     };
 
     const handleDelete = (id) => { deleteCrmLead(id); setDeletingId(null); showToast('Lead deleted', 'error'); };
@@ -140,67 +110,37 @@ export default function CrmLeadsPage() {
         }
     };
 
-    // Convert paid lead → create customer + order
-    const convertToOrder = async (lead, e) => {
-        if (e) e.stopPropagation();
-        if (!lead.lead_products || lead.lead_products.length === 0) { showToast('No products set on this lead', 'error'); return; }
-        try {
-            // Find or create customer
-            let customer = customers.find(c => c.phone && (c.phone.includes(lead.whatsapp) || lead.whatsapp.includes(c.phone)));
-            if (!customer) {
-                customer = await addCustomerAsync({ name: lead.name, phone: lead.whatsapp, address: lead.location || '', area: lead.location || '' });
-            }
-            const validProducts = lead.lead_products.filter(lp => products.some(p => p.id === parseInt(lp.id, 10)));
-            if (validProducts.length === 0) {
-                showToast('Products no longer exist in ERP, cannot create order', 'error');
-                return;
-            }
-            const items = validProducts.map(lp => ({
-                productId: parseInt(lp.id, 10), quantity: Math.max(1, parseInt(lp.qty, 10) || 1), price: Number(lp.price) || 0, gst: 0
-            }));
-            const subtotal = items.reduce((s, i) => s + i.quantity * i.price, 0);
-            await addOrder({
-                customerId: parseInt(customer.id, 10),
-                crmLeadId: lead.id,
-                items, subtotal, gstAmount: 0, total: subtotal,
-                paidAmount: lead.paid_amount || 0,
-                paymentStatus: lead.payment_status === 'paid' ? 'paid' : lead.paid_amount > 0 ? 'partial' : 'not_paid',
-                createdBy: user?.id || lead.created_by || 1,
-                closer_id: user?.id || 1
-            });
-            updateCrmLead({ ...lead, converted: true, closer_id: user?.id || 1 });
-            showToast('✅ Order created from lead!');
-
-        } catch (err) { showToast('Failed: ' + err.message, 'error'); }
-    };
-
-    const pendingCount = crmLeads.filter(l => l.payment_status === 'pending' && l.status !== 'not-interested').length;
-
     return (
         <div className="page-content crm-page">
-            <div className="crm-page-header">
+            <div className="crm-header">
                 <div>
-                    <h1 className="crm-page-title">👥 Leads</h1>
-                    <p className="crm-page-subtitle">{sorted.length} leads{pendingCount > 0 ? ` · ${pendingCount} pending payment` : ''}</p>
+                    <h1 className="crm-title">Leads ({crmLeadsTotal})</h1>
+                    <p className="crm-subtitle">Total leads in current view</p>
                 </div>
                 <button className="crm-btn crm-btn-primary" onClick={() => { setEditingLead(null); setShowModal(true); }}>+ Add Lead</button>
             </div>
 
             {/* CRM Tabs */}
             <div className="crm-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid var(--primary-100)', paddingBottom: '8px' }}>
-                <button className={`crm-tab ${tab === 'my-leads' ? 'active' : ''}`} onClick={() => setTab('my-leads')} style={{ padding: '8px 16px', border: 'none', background: tab === 'my-leads' ? 'var(--primary-100)' : 'transparent', borderRadius: 'var(--radius-md)', color: tab === 'my-leads' ? 'var(--primary-700)' : 'var(--primary-500)', fontWeight: tab === 'my-leads' ? 600 : 400, cursor: 'pointer' }}>My Leads</button>
-                <button className={`crm-tab ${tab === 'passing-in' ? 'active' : ''}`} onClick={() => setTab('passing-in')} style={{ padding: '8px 16px', border: 'none', background: tab === 'passing-in' ? 'var(--primary-100)' : 'transparent', borderRadius: 'var(--radius-md)', color: tab === 'passing-in' ? 'var(--primary-700)' : 'var(--primary-500)', fontWeight: tab === 'passing-in' ? 600 : 400, cursor: 'pointer', position: 'relative' }}>
-                    Passing In
-                    {crmLeads.filter(l => l.is_passed && l.assigned_to === user?.id).length > 0 && (
-                        <span style={{ position: 'absolute', top: '4px', right: '4px', width: '8px', height: '8px', background: 'var(--danger-500)', borderRadius: '50%', border: '2px solid white' }} />
-                    )}
-                </button>
-                <button className={`crm-tab ${tab === 'passing-out' ? 'active' : ''}`} onClick={() => setTab('passing-out')} style={{ padding: '8px 16px', border: 'none', background: tab === 'passing-out' ? 'var(--primary-100)' : 'transparent', borderRadius: 'var(--radius-md)', color: tab === 'passing-out' ? 'var(--primary-700)' : 'var(--primary-500)', fontWeight: tab === 'passing-out' ? 600 : 400, cursor: 'pointer' }}>Pass Out</button>
+                {['my-leads', 'passing-in', 'passing-out'].map(t => (
+                    <button key={t} className={`crm-tab ${tab === t ? 'active' : ''}`} onClick={() => { setTab(t); setPage(1); }}>
+                        {t.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                        {t === 'passing-in' && crmLeads.some(l => l.is_passed && l.assigned_to === user?.id) && (
+                            <span style={{ position: 'absolute', top: '4px', right: '4px', width: '8px', height: '8px', background: 'var(--danger-500)', borderRadius: '50%', border: '2px solid white' }} />
+                        )}
+                    </button>
+                ))}
             </div>
 
             {/* Search + Sort */}
             <div className="crm-search-sort-row">
-                <input className="crm-search-input" style={{ marginBottom: 0, flex: 1 }} placeholder="🔍 Search name, WhatsApp, location..." value={search} onChange={e => setSearch(e.target.value)} />
+                <input
+                    type="text"
+                    placeholder="Search name, WhatsApp, location..."
+                    className="crm-search-input"
+                    value={search}
+                    onChange={e => { setSearch(e.target.value); setPage(1); }}
+                />
                 <select className="crm-input crm-sort-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
                     <option value="newest">⬇ Newest</option>
                     <option value="oldest">⬆ Oldest</option>
@@ -211,7 +151,7 @@ export default function CrmLeadsPage() {
                 </select>
 
                 {user.role === 'super_admin' && (
-                    <select className="crm-input" value={empFilter} onChange={e => setEmpFilter(e.target.value)} style={{ maxWidth: '160px' }}>
+                    <select className="crm-input" value={empFilter} onChange={e => { setEmpFilter(e.target.value); setPage(1); }} style={{ maxWidth: '160px' }}>
                         <option value="all">👤 All Employees</option>
                         {employees.map(emp => (
                             <option key={emp.id} value={emp.id}>{emp.name}</option>
@@ -223,19 +163,19 @@ export default function CrmLeadsPage() {
             {/* Filters */}
             <div className="crm-filters-row" style={{ marginTop: '0.75rem' }}>
                 <div className="crm-filter-pills">
-                    <button className={`crm-pill ${starredOnly ? 'active' : ''}`} onClick={() => setStarredOnly(s => !s)}>⭐ Starred</button>
-                    {[{ v: 'active', l: 'All Active' }, { v: 'hot', l: '🔥 Hot' }, { v: 'warm', l: '🌡️ Warm' }, { v: 'cold', l: '🧊 Cold' }, { v: 'not-interested', l: '👎 Not Interested' }].map(({ v, l }) => (
-                        <button key={v} className={`crm-pill ${statusFilter === v ? 'active' : ''}`} onClick={() => setStatusFilter(v)}>{l}</button>
+                    <button className={`crm-pill ${starredOnly ? 'active' : ''}`} onClick={() => { setStarredOnly(s => !s); setPage(1); }}>⭐ Starred</button>
+                    {[{ v: 'active', l: 'All Active' }, { v: 'all', l: 'All' }, { v: 'hot', l: '🔥 Hot' }, { v: 'warm', l: '🌡️ Warm' }, { v: 'cold', l: '🧊 Cold' }, { v: 'not-interested', l: '👎 Not Interested' }].map(({ v, l }) => (
+                        <button key={v} className={`crm-pill ${statusFilter === v ? 'active' : ''}`} onClick={() => { setStatusFilter(v); setPage(1); }}>{l}</button>
                     ))}
                 </div>
                 <div className="crm-filter-pills">
                     {[{ v: 'all', l: 'All Payments' }, { v: 'pending', l: '⏳ Pending' }, { v: 'paid', l: '✅ Paid' }].map(({ v, l }) => (
-                        <button key={v} className={`crm-pill ${payFilter === v ? 'active' : ''}`} onClick={() => setPayFilter(v)}>{l}</button>
+                        <button key={v} className={`crm-pill ${payFilter === v ? 'active' : ''}`} onClick={() => { setPayFilter(v); setPage(1); }}>{l}</button>
                     ))}
                 </div>
             </div>
 
-            {sorted.length === 0 ? (
+            {currentLeads.length === 0 ? (
                 <div className="crm-empty-state">
                     <div className="crm-empty-icon">👥</div>
                     <p>{statusFilter === 'active' ? 'Add your first lead!' : 'No leads match these filters.'}</p>
@@ -257,7 +197,7 @@ export default function CrmLeadsPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {sorted.map(lead => {
+                                {currentLeads.map(lead => {
                                     const pending = Math.max(0, (lead.amount || 0) - (lead.paid_amount || 0));
                                     const productNames = (lead.lead_products || []).map(lp => lp.name);
                                     return (
@@ -299,7 +239,6 @@ export default function CrmLeadsPage() {
                                                     {lead.instagram && <a className="crm-icon-btn" href={lead.instagram} target="_blank" rel="noopener noreferrer" title="Instagram">📸</a>}
                                                     <button className="crm-icon-btn" title="Edit" onClick={e => { e.stopPropagation(); setEditingLead(lead); setShowModal(true); }}>✏️</button>
                                                     <button className="crm-icon-btn" title="Pass Lead" onClick={e => { e.stopPropagation(); setPassingLead(lead); }}>➡️</button>
-
                                                     <button className="crm-icon-btn crm-icon-btn-danger" title="Delete" onClick={e => { e.stopPropagation(); setDeletingId(lead.id); }}>🗑️</button>
                                                 </div>
                                             </td>
@@ -312,44 +251,47 @@ export default function CrmLeadsPage() {
 
                     {/* ===== MOBILE CARD VIEW ===== */}
                     <div className="crm-leads-mobile-cards">
-                        {sorted.map(lead => {
-                            const pending = Math.max(0, (lead.amount || 0) - (lead.paid_amount || 0));
-                            const productNames = (lead.lead_products || []).map(lp => lp.name);
-                            return (
-                                <div key={lead.id} className="crm-lead-card" onClick={() => setViewingLead(lead)}>
-                                    <div className="crm-card-header">
-                                        <div className="crm-card-avatar-name">
-                                            <div className="crm-avatar">{lead.name.charAt(0).toUpperCase()}</div>
-                                            <div>
-                                                <div className="crm-card-name">{lead.name}{lead.is_starred ? ' ⭐' : ''}</div>
-                                                <div style={{ fontSize: '0.7rem', color: 'var(--gray-500)' }}>
-                                                    👤 {allUsers?.find(e => Number(e.id) === Number(lead.created_by))?.name || 'System'} · {new Date(lead.created_at).toLocaleDateString('en-IN')}
-                                                </div>
-                                                {lead.location && <div className="crm-card-location">📍{lead.location}</div>}
+                        {currentLeads.map(lead => (
+                            <div key={lead.id} className="crm-lead-card" onClick={() => setViewingLead(lead)}>
+                                <div className="crm-card-header">
+                                    <div className="crm-card-avatar-name">
+                                        <div className="crm-avatar">{lead.name.charAt(0).toUpperCase()}</div>
+                                        <div>
+                                            <div className="crm-card-name">{lead.name}{lead.is_starred ? ' ⭐' : ''}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--gray-500)' }}>
+                                                👤 {allUsers?.find(e => Number(e.id) === Number(lead.created_by))?.name || 'System'} · {new Date(lead.created_at).toLocaleDateString('en-IN')}
                                             </div>
+                                            {lead.location && <div className="crm-card-location">📍{lead.location}</div>}
                                         </div>
-                                        <span className={`crm-status-badge crm-status-${lead.status}`}>{STATUS_LABELS[lead.status]}</span>
                                     </div>
-                                    {productNames.length > 0 && <div className="crm-card-products">{productNames.map(n => <span key={n} className="crm-product-pill">{n}</span>)}</div>}
-                                    {lead.next_action_message && <div className="crm-card-next-action">💬 <em>{lead.next_action_message.slice(0, 80)}{lead.next_action_message.length > 80 ? '…' : ''}</em></div>}
-                                    {lead.next_call_date && <div className="crm-card-calldate">⏰ {new Date(lead.next_call_date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>}
-                                    <div className="crm-card-payment">
-                                        {lead.amount > 0 ? (pending > 0 ? <span className="crm-pending-badge">⏳ ₹{pending.toLocaleString('en-IN')} pending</span> : <span className="crm-paid-badge">✅ Paid</span>) : <span className="crm-no-amount">No amount set</span>}
-                                    </div>
-                                    <div className="crm-card-actions" onClick={e => e.stopPropagation()}>
-                                        <button className="crm-icon-btn" title="Star" onClick={e => toggleStar(lead, e)}>{lead.is_starred ? '⭐' : '☆'}</button>
-                                        <a className="crm-icon-btn" href={`tel:${lead.whatsapp}`} title="Call">📞</a>
-                                        <a className="crm-icon-btn" href={`https://wa.me/${lead.whatsapp}`} target="_blank" rel="noopener noreferrer" title="WhatsApp">💬</a>
-                                        {lead.instagram && <a className="crm-icon-btn" href={lead.instagram} target="_blank" rel="noopener noreferrer" title="Instagram">📸</a>}
-                                        <button className="crm-icon-btn" title="Edit" onClick={e => { e.stopPropagation(); setEditingLead(lead); setShowModal(true); }}>✏️</button>
-                                        <button className="crm-icon-btn" title="Pass Lead" onClick={e => { e.stopPropagation(); setPassingLead(lead); }}>➡️</button>
-
-                                        <button className="crm-icon-btn crm-icon-btn-danger" title="Delete" onClick={e => { e.stopPropagation(); setDeletingId(lead.id); }}>🗑️</button>
-                                    </div>
+                                    <span className={`crm-status-badge crm-status-${lead.status}`}>{STATUS_LABELS[lead.status]}</span>
                                 </div>
-                            );
-                        })}
+                                {(lead.lead_products || []).length > 0 && <div className="crm-card-products">{(lead.lead_products || []).map(n => <span key={n.id} className="crm-product-pill">{n.name}</span>)}</div>}
+                                {lead.next_action_message && <div className="crm-card-next-action">💬 <em>{lead.next_action_message.slice(0, 80)}{lead.next_action_message.length > 80 ? '…' : ''}</em></div>}
+                                {lead.next_call_date && <div className="crm-card-calldate">⏰ {new Date(lead.next_call_date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>}
+                                <div className="crm-card-payment">
+                                    {lead.amount > 0 ? (Math.max(0, (lead.amount || 0) - (lead.paid_amount || 0)) > 0 ? <span className="crm-pending-badge">⏳ ₹{Math.max(0, (lead.amount || 0) - (lead.paid_amount || 0)).toLocaleString('en-IN')} pending</span> : <span className="crm-paid-badge">✅ Paid</span>) : <span className="crm-no-amount">No amount set</span>}
+                                </div>
+                                <div className="crm-card-actions" onClick={e => e.stopPropagation()}>
+                                    <button className="crm-icon-btn" title="Star" onClick={e => toggleStar(lead, e)}>{lead.is_starred ? '⭐' : '☆'}</button>
+                                    <a className="crm-icon-btn" href={`tel:${lead.whatsapp}`} title="Call">📞</a>
+                                    <a className="crm-icon-btn" href={`https://wa.me/${lead.whatsapp}`} target="_blank" rel="noopener noreferrer" title="WhatsApp">💬</a>
+                                    {lead.instagram && <a className="crm-icon-btn" href={lead.instagram} target="_blank" rel="noopener noreferrer" title="Instagram">📸</a>}
+                                    <button className="crm-icon-btn" title="Edit" onClick={e => { e.stopPropagation(); setEditingLead(lead); setShowModal(true); }}>✏️</button>
+                                    <button className="crm-icon-btn" title="Pass Lead" onClick={e => { e.stopPropagation(); setPassingLead(lead); }}>➡️</button>
+                                    <button className="crm-icon-btn crm-icon-btn-danger" title="Delete" onClick={e => { e.stopPropagation(); setDeletingId(lead.id); }}>🗑️</button>
+                                </div>
+                            </div>
+                        ))}
                     </div>
+
+                    {totalPages > 1 && (
+                        <div className="crm-pagination" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', padding: '24px 0', borderTop: '1px solid #eee' }}>
+                            <button className="crm-btn crm-btn-ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Prev</button>
+                            <span style={{ fontSize: '0.9rem', color: '#666' }}>Page {page} of {totalPages} ({crmLeadsTotal} total)</span>
+                            <button className="crm-btn crm-btn-ghost" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
+                        </div>
+                    )}
                 </>
             )}
 
