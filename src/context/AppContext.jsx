@@ -155,23 +155,14 @@ export function AppProvider({ children }) {
     const dataLoaded = useRef(false);
 
     useEffect(() => {
-        let intervalId;
         if (state.user) {
             if (!dataLoaded.current) {
                 dataLoaded.current = true;
                 loadAllData();
             }
-            // Auto refresh every 60 seconds to reduce database row reads
-            intervalId = setInterval(() => {
-                loadAllData(true);
-            }, 60000);
         } else {
             dataLoaded.current = false;
         }
-
-        return () => {
-            if (intervalId) clearInterval(intervalId);
-        };
     }, [state.user]);
 
     const loadAllData = async (isBackground = false) => {
