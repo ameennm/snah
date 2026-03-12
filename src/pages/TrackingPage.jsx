@@ -12,6 +12,7 @@ export default function TrackingPage() {
     const [trackingInput, setTrackingInput] = useState('');
     const [partnerInput, setPartnerInput] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [dateFilter, setDateFilter] = useState('');
     const [deliveryPartners, setDeliveryPartners] = useState([]);
     const [page, setPage] = useState(1);
 
@@ -34,11 +35,12 @@ export default function TrackingPage() {
                 page,
                 limit: PAGE_SIZE,
                 status: statusFilter,
-                paymentStatus: 'all'
+                paymentStatus: 'all',
+                dateFilter: dateFilter || 'all'
             });
         }, 500);
         return () => clearTimeout(timer);
-    }, [search, page, statusFilter, searchOrders]);
+    }, [search, page, statusFilter, dateFilter, searchOrders]);
 
     const totalPages = Math.ceil((ordersTotal || 0) / PAGE_SIZE);
     const paginated = (orders || []).slice(0, PAGE_SIZE);
@@ -122,13 +124,22 @@ export default function TrackingPage() {
                                 id="tracking-search"
                             />
                         </div>
-                        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={{ maxWidth: '160px' }}>
-                            <option value="all">All Status</option>
-                            <option value="pending">Pending</option>
-                            <option value="shipped">Shipped</option>
-                            <option value="delivered">Delivered</option>
-                            <option value="returned">Returned</option>
-                        </select>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input 
+                                type="date" 
+                                value={dateFilter} 
+                                onChange={(e) => { setDateFilter(e.target.value); setPage(1); }} 
+                                style={{ padding: '8px', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)' }}
+                                title="Filter by Created Date"
+                            />
+                            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={{ maxWidth: '160px' }}>
+                                <option value="all">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="shipped">Shipped</option>
+                                <option value="delivered">Delivered</option>
+                                <option value="returned">Returned</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 

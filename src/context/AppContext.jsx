@@ -393,9 +393,9 @@ export function AppProvider({ children }) {
     }, [state.user?.id]);
 
     const searchOrders = useCallback(async (filters = {}) => {
-        const { query = '', page = 1, limit = 20, status = 'all', paymentStatus = 'all' } = filters;
+        const { query = '', page = 1, limit = 20, status = 'all', paymentStatus = 'all', dateFilter = 'all' } = filters;
         const offset = (page - 1) * limit;
-        const results = await api(`/orders?role=${state.user?.role || ''}&search=${encodeURIComponent(query)}&status=${status}&paymentStatus=${paymentStatus}&limit=${limit}&offset=${offset}`);
+        const results = await api(`/orders?role=${state.user?.role || ''}&search=${encodeURIComponent(query)}&status=${status}&paymentStatus=${paymentStatus}&dateFilter=${encodeURIComponent(dateFilter)}&limit=${limit}&offset=${offset}`);
         dispatch({ type: 'SET_ORDERS', payload: results });
         return results;
     }, [state.user?.role]);

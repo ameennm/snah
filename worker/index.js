@@ -346,6 +346,7 @@ export default {
                 const role = urlParams.get('role');
                 const status = urlParams.get('status');
                 const paymentStatus = urlParams.get('paymentStatus'); // 'all', 'paid', 'not_paid', 'partial'
+                const dateFilter = urlParams.get('dateFilter'); // YYYY-MM-DD format, or 'all'
 
                 let query = 'SELECT o.*, c.name as customer_name, c.phone as customer_phone FROM orders o LEFT JOIN customers c ON o.customer_id = c.id';
                 let values = [];
@@ -369,6 +370,12 @@ export default {
                 if (paymentStatus && paymentStatus !== 'all') {
                     whereClauses.push("o.payment_status = ?");
                     values.push(paymentStatus);
+                }
+
+                if (dateFilter && dateFilter !== 'all') {
+                    // Assuming dateFilter is in YYYY-MM-DD format and created_at is in ISO 8601 string format
+                    whereClauses.push("date(o.created_at) = ?");
+                    values.push(dateFilter);
                 }
 
                 // If non-admin employee, default to a smaller limit if not specified

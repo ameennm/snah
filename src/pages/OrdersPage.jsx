@@ -18,6 +18,7 @@ export default function OrdersPage() {
     const [viewOrder, setViewOrder] = useState(null);
     const [editOrderId, setEditOrderId] = useState(null);
     const [paymentFilter, setPaymentFilter] = useState('all');
+    const [dateFilter, setDateFilter] = useState('');
     const [showPaymentModal, setShowPaymentModal] = useState(null);
     const [paymentInput, setPaymentInput] = useState('');
     const [activeTab, setActiveTab] = useState('all');
@@ -67,11 +68,12 @@ export default function OrdersPage() {
                 page,
                 limit: PAGE_SIZE,
                 status: activeTab,
-                paymentStatus: paymentFilter
+                paymentStatus: paymentFilter,
+                dateFilter: dateFilter || 'all'
             });
         }, 500);
         return () => clearTimeout(timer);
-    }, [search, page, activeTab, paymentFilter, searchOrders]);
+    }, [search, page, activeTab, paymentFilter, dateFilter, searchOrders]);
 
     // Auto-trigger redispatch if navigated here from Followups
     useEffect(() => {
@@ -430,12 +432,21 @@ export default function OrdersPage() {
                             <FiSearch className="search-icon" />
                             <input placeholder="Search orders, tracking details..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} id="order-search" />
                         </div>
-                        <select value={paymentFilter} onChange={(e) => { setPaymentFilter(e.target.value); setPage(1); }} style={{ maxWidth: '160px' }}>
-                            <option value="all">All Payments</option>
-                            <option value="paid">Paid</option>
-                            <option value="not_paid">Not Paid</option>
-                            <option value="partial">Partial</option>
-                        </select>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input 
+                                type="date" 
+                                value={dateFilter} 
+                                onChange={(e) => { setDateFilter(e.target.value); setPage(1); }} 
+                                style={{ padding: '8px', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)' }}
+                                title="Filter by Created Date"
+                            />
+                            <select value={paymentFilter} onChange={(e) => { setPaymentFilter(e.target.value); setPage(1); }} style={{ maxWidth: '160px' }}>
+                                <option value="all">All Payments</option>
+                                <option value="paid">Paid</option>
+                                <option value="not_paid">Not Paid</option>
+                                <option value="partial">Partial</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div className="table-container">
