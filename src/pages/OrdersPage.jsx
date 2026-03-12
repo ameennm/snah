@@ -455,6 +455,8 @@ export default function OrdersPage() {
                         <tbody>
                             {paginated.map((order) => {
                                 const customer = getCustomerById(order.customerId);
+                                const customerName = order.customerName || customer?.name || 'Unknown';
+                                const customerPhone = order.customerPhone || customer?.phone || '';
                                 const daysSince = getDaysSince(order.shippedDate);
                                 return (
                                     <tr key={order.id} style={order.status === 'returned' ? { opacity: 0.6 } : {}}>
@@ -466,8 +468,8 @@ export default function OrdersPage() {
                                             <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{formatDate(order.createdAt)}</div>
                                         </td>
                                         <td data-label="Customer">
-                                            <div className="font-bold">{customer?.name || 'Unknown'}</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{customer?.phone}</div>
+                                            <div className="font-bold">{customerName}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{customerPhone}</div>
                                         </td>
                                         <td data-label="Products" style={{ maxWidth: '200px' }}>
                                             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -809,7 +811,7 @@ export default function OrdersPage() {
                                     // Otherwise send a WhatsApp message to the customer with tracking info
                                     const href = isWa
                                         ? tLink
-                                        : `https://wa.me/${getCustomerById(viewOrder.customerId)?.phone}?text=${encodeURIComponent(`Your order has been dispatched on ${new Date(viewOrder.shippedDate || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.')} Via ${viewOrder.deliveryPartner || 'Courier'}. Use tracking ID [${viewOrder.trackingId}] to follow your delivery using link [${tLink || 'https://snahorganics.com'}]. Thanks for choosing SNAH Organics.\nwww.snahorganics.com\n\nPlease Note ⚠️ : Opening video is must to claim the parcel issues.`)}`;
+                                        : `https://wa.me/${viewOrder.customerPhone || getCustomerById(viewOrder.customerId)?.phone}?text=${encodeURIComponent(`Your order has been dispatched on ${new Date(viewOrder.shippedDate || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.')} Via ${viewOrder.deliveryPartner || 'Courier'}. Use tracking ID [${viewOrder.trackingId}] to follow your delivery using link [${tLink || 'https://snahorganics.com'}]. Thanks for choosing SNAH Organics.\nwww.snahorganics.com\n\nPlease Note ⚠️ : Opening video is must to claim the parcel issues.`)}`;
                                     return (
                                         <a href={href} target="_blank" rel="noopener noreferrer"
                                             className="btn btn-success" style={{ whiteSpace: 'nowrap' }}>
@@ -825,8 +827,8 @@ export default function OrdersPage() {
 
                         {/* Order info */}
                         <div style={{ padding: '16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-md)' }}>
-                            <div className="flex justify-between" style={{ marginBottom: '4px' }}><span>Customer:</span> <strong>{getCustomerById(viewOrder.customerId)?.name}</strong></div>
-                            <div className="flex justify-between" style={{ marginBottom: '4px' }}><span>Phone:</span> <span className="font-mono">{getCustomerById(viewOrder.customerId)?.phone}</span></div>
+                            <div className="flex justify-between" style={{ marginBottom: '4px' }}><span>Customer:</span> <strong>{viewOrder.customerName || getCustomerById(viewOrder.customerId)?.name || 'Unknown'}</strong></div>
+                            <div className="flex justify-between" style={{ marginBottom: '4px' }}><span>Phone:</span> <span className="font-mono">{viewOrder.customerPhone || getCustomerById(viewOrder.customerId)?.phone || ''}</span></div>
                             <div className="flex justify-between"><span>Date:</span> <span>{formatDate(viewOrder.createdAt)}</span></div>
                             {viewOrder.closer_id && (
                                 <div className="flex justify-between" style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid var(--gray-100)' }}>

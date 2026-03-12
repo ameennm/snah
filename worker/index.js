@@ -347,12 +347,11 @@ export default {
                 const status = urlParams.get('status');
                 const paymentStatus = urlParams.get('paymentStatus'); // 'all', 'paid', 'not_paid', 'partial'
 
-                let query = 'SELECT o.* FROM orders o';
+                let query = 'SELECT o.*, c.name as customer_name, c.phone as customer_phone FROM orders o LEFT JOIN customers c ON o.customer_id = c.id';
                 let values = [];
                 let whereClauses = [];
 
                 if (search) {
-                    query += ' LEFT JOIN customers c ON o.customer_id = c.id';
                     whereClauses.push('(o.id LIKE ? OR o.tracking_id LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)');
                     const searchPattern = `%${search}%`;
                     values.push(searchPattern, searchPattern, searchPattern, searchPattern);
@@ -385,8 +384,7 @@ export default {
                 }
                 
                 // Get Total Count for pagination
-                let countQuery = 'SELECT COUNT(*) as total FROM orders o';
-                if (search) countQuery += ' LEFT JOIN customers c ON o.customer_id = c.id';
+                let countQuery = 'SELECT COUNT(*) as total FROM orders o LEFT JOIN customers c ON o.customer_id = c.id';
                 if (whereClauses.length > 0) countQuery += ' WHERE ' + whereClauses.join(' AND ');
                 const { results: countResult } = await env.DB.prepare(countQuery).bind(...values).all();
                 const total = countResult[0].total;
@@ -415,6 +413,8 @@ export default {
                     shippedDate: o.shipped_date || null,
                     deliveredDate: o.delivered_date || null,
                     createdAt: o.created_at, createdBy: o.created_by,
+                    customerName: o.customer_name || null,
+                    customerPhone: o.customer_phone || null,
                     items: items.filter(i => i.order_id === o.id).map(i => ({
                         productId: i.product_id, quantity: i.quantity, price: i.price, gst: i.gst,
                     })),
