@@ -6,7 +6,7 @@ import { FaWhatsapp } from 'react-icons/fa';
 const PAGE_SIZE = 20;
 
 export default function TrackingPage() {
-    const { orders, hasPermission, getCustomerById, getProductById, updateOrder, api } = useApp();
+    const { orders, ordersTotal, hasPermission, getCustomerById, getProductById, updateOrder, api, searchOrders } = useApp();
     const [search, setSearch] = useState('');
     const [editingId, setEditingId] = useState(null);
     const [trackingInput, setTrackingInput] = useState('');
@@ -26,22 +26,22 @@ export default function TrackingPage() {
         return found?.tracking_url_template || '';
     };
 
-    const filtered = useMemo(() => orders
-        .filter((o) => {
-            const customer = getCustomerById(o.customerId);
-            const matchesSearch =
-                o.id.toLowerCase().includes(search.toLowerCase()) ||
-                (customer?.name || '').toLowerCase().includes(search.toLowerCase()) ||
-                (o.trackingId || '').toLowerCase().includes(search.toLowerCase()) ||
-                (o.deliveryPartner || '').toLowerCase().includes(search.toLowerCase());
-            const matchesStatus = statusFilter === 'all' || o.status === statusFilter;
-            return matchesSearch && matchesStatus;
-        })
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
-        [orders, search, statusFilter, getCustomerById]);
+    // Server-side search and pagination
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            searchOrders({
+                query: search,
+                page,
+                limit: PAGE_SIZE,
+                status: statusFilter,
+                paymentStatus: 'all'
+            });
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [search, page, statusFilter, searchOrders]);
 
-    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-    const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    const totalPages = Math.ceil((ordersTotal || 0) / PAGE_SIZE);
+    const paginated = (orders || []).slice(0, PAGE_SIZE);
 
     const startEditing = (order) => {
         setEditingId(order.id);
@@ -111,7 +111,7 @@ export default function TrackingPage() {
         <>
             <div className="card">
                 <div className="card-header">
-                    <h2>Shipment Tracking ({filtered.length})</h2>
+                    <h2>Shipment Tracking ({ordersTotal || 0})</h2>
                     <div className="filters-row">
                         <div className="search-bar">
                             <FiSearch className="search-icon" />
@@ -154,8 +154,8 @@ export default function TrackingPage() {
                                     <tr key={order.id}>
                                         <td data-label="Order ID" className="font-mono font-bold" style={{ fontSize: '0.82rem' }}>{order.id}</td>
                                         <td data-label="Customer">
-                                            <div className="font-bold">{customer?.name || 'Unknown'}</div>
-                                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>{customer?.phone}</div>
+                                            <div className="font-bold">{customer?.name || order.customerName || 'Unknown'}</div>
+                                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>{customer?.phone || order.customerPhone}</div>
                                         </td>
                                         <td data-label="Products" style={{ fontSize: '0.82rem' }}>
                                             {(order.items || []).map((item) => {
@@ -242,13 +242,13 @@ export default function TrackingPage() {
                                     </tr>
                                 );
                             })}
-                            {filtered.length === 0 && (
+                            {paginated.length === 0 && (
                                 <tr>
                                     <td colSpan={8}>
                                         <div className="empty-state">
                                             <div className="empty-state-icon">🚚</div>
                                             <h3>No orders found</h3>
-                                            <p>Orders will appear here for tracking management</p>
+                                            <p>Try adjusting your search or filters</p>
                                         </div>
                                     </td>
                                 </tr>
@@ -256,13 +256,12 @@ export default function TrackingPage() {
                         </tbody>
                     </table>
                 </div>
-
                 {totalPages > 1 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: '1px solid var(--border-light)', background: 'var(--gray-50)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: '1px solid var(--border-light)', background: 'var(--gray-50)', borderBottomLeftRadius: 'var(--radius-lg)', borderBottomRightRadius: 'var(--radius-lg)' }}>
                         <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
-                            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+                            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, ordersTotal)} of {ordersTotal} orders
                         </span>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
                             <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>← Prev</button>
                             <span style={{ fontSize: '0.85rem', fontWeight: 600, padding: '0 8px' }}>Page {page} of {totalPages}</span>
                             <button className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next →</button>
