@@ -42,7 +42,7 @@ function getDateRange(period, customFrom, customTo) {
 }
 
 export default function DashboardPage() {
-    const { orders, customers, getCustomerById, api } = useApp();
+    const { orders, customers, getCustomerById, api, products } = useApp();
 
     // Date filter state
     const [period, setPeriod] = useState('all');
@@ -94,9 +94,11 @@ export default function DashboardPage() {
 
     // Recent orders just uses whatever 20 orders we already have locally, 
     // since we only display 5. No need to query back to server.
-    const recentOrders = [...orders]
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, 5);
+    const recentOrders = useMemo(() => {
+        return [...orders]
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            .slice(0, 5);
+    }, [orders]);
 
     const formatCurrency = (val) =>
         '₹' + Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -257,7 +259,7 @@ export default function DashboardPage() {
                             </thead>
                             <tbody>
                                 {productPerformance.topSellers.slice(0, 5).map((p, i) => (
-                                    <tr key={p.id}>
+                                    <tr key={p.productId || i}>
                                         <td>
                                             <span style={{
                                                 background: i === 0 ? 'var(--warning-500)' : i === 1 ? 'var(--gray-400)' : i === 2 ? '#cd7f32' : 'var(--gray-200)',

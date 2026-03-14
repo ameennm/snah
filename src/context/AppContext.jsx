@@ -145,8 +145,16 @@ async function api(endpoint, options = {}) {
         ...options,
         body: options.body ? JSON.stringify(options.body) : undefined,
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'API error');
+    
+    let data;
+    try {
+        data = await res.json();
+    } catch (e) {
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        return null;
+    }
+
+    if (!res.ok) throw new Error(data?.error || `API error ${res.status}`);
     return data;
 }
 

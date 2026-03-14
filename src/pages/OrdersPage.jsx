@@ -5,7 +5,7 @@ import Modal from '../components/Modal';
 import { FiPlus, FiSearch, FiTrash2, FiEye, FiUserCheck, FiUserPlus, FiDollarSign, FiMessageCircle, FiTruck, FiRefreshCcw, FiEdit } from 'react-icons/fi';
 
 export default function OrdersPage() {
-    const { orders, ordersTotal, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomerAsync, addOrder, updateOrder, deleteOrder, api, crmLeads, searchOrders } = useApp();
+    const { orders, ordersTotal, customers, products, hasPermission, getCustomerById, getProductById, user, addCustomerAsync, addOrder, updateOrder, deleteOrder, api, crmLeads, searchOrders, dispatch } = useApp();
     const [allUsers, setAllUsers] = useState([]);
 
     useEffect(() => {
@@ -199,11 +199,21 @@ export default function OrdersPage() {
             if (matchedCustomer) {
                 customerId = matchedCustomer.id;
             } else {
-                const realCustomer = await addCustomerAsync({
-                    name: effectiveName, phone: fullPhone,
-                    address: customerAddress, area: customerArea,
-                });
-                customerId = realCustomer.id;
+                // To avoid 400 Bad Request console errors, let's proactively check if the customer exists on the server first
+                const checkRes = await api(`/customers?search=${encodeURIComponent(fullPhone)}&limit=10`);
+                const existingCust = (checkRes.results || []).find(c => c.phone.replace(/[^0-9]/g, '') === fullPhone);
+                
+                if (existingCust) {
+                    customerId = existingCust.id;
+                    dispatch({ type: 'ADD_CUSTOMER', payload: existingCust });
+                } else {
+                    // Safe to create, they don't exist
+                    const realCustomer = await addCustomerAsync({
+                        name: effectiveName, phone: fullPhone,
+                        address: customerAddress, area: customerArea,
+                    });
+                    customerId = realCustomer.id;
+                }
             }
 
             // Capture current edit ID before reset
