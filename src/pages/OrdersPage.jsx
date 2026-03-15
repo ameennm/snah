@@ -830,9 +830,20 @@ export default function OrdersPage() {
                                     const isWa = tLink.includes('wa.me') || tLink.includes('whatsapp');
                                     // If tracking link is a WhatsApp link, open it directly
                                     // Otherwise send a WhatsApp message to the customer with tracking info
+                                    const rawPhone = viewOrder.customerPhone || getCustomerById(viewOrder.customerId)?.phone || '';
+                                    let phone = rawPhone.replace(/[^0-9]/g, '');
+                                    if (phone.length === 10) phone = '91' + phone;
+
+                                    const name = viewOrder.customerName || getCustomerById(viewOrder.customerId)?.name || 'Customer';
+                                    const dispatchDate = new Date(viewOrder.shippedDate || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
+                                    const partner = viewOrder.deliveryPartner || 'Courier';
+                                    const trackingId = viewOrder.trackingId;
+
+                                    const message = `Hello ${name}, your order has been dispatched on ${dispatchDate} via ${partner}. Use tracking ID [${trackingId}] to follow your delivery using link [${tLink || 'https://snahorganics.com'}]. Thanks for choosing SNAH Organics.\n\nwww.snahorganics.com\n\nPlease Note ⚠️ : Opening video is must to claim the parcel issues.`;
+
                                     const href = isWa
                                         ? tLink
-                                        : `https://wa.me/${viewOrder.customerPhone || getCustomerById(viewOrder.customerId)?.phone}?text=${encodeURIComponent(`Your order has been dispatched on ${new Date(viewOrder.shippedDate || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.')} Via ${viewOrder.deliveryPartner || 'Courier'}. Use tracking ID [${viewOrder.trackingId}] to follow your delivery using link [${tLink || 'https://snahorganics.com'}]. Thanks for choosing SNAH Organics.\nwww.snahorganics.com\n\nPlease Note ⚠️ : Opening video is must to claim the parcel issues.`)}`;
+                                        : `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
                                     return (
                                         <a href={href} target="_blank" rel="noopener noreferrer"
                                             className="btn btn-success" style={{ whiteSpace: 'nowrap' }}>

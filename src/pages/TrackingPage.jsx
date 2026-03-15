@@ -72,13 +72,22 @@ export default function TrackingPage() {
 
     const sendWhatsApp = (order) => {
         const customer = getCustomerById(order.customerId);
-        if (!customer) return;
+        const name = order.customerName || customer?.name || 'Customer';
+        const rawPhone = order.customerPhone || customer?.phone || '';
+
+        let phone = rawPhone.replace(/[^0-9]/g, '');
+        if (phone.length === 10) phone = '91' + phone;
+
+        if (!phone) {
+            console.error('No phone number found for order:', order.id);
+            return;
+        }
 
         const tLink = order.trackingLink || '';
         const isWa = tLink.includes('wa.me') || tLink.includes('whatsapp');
 
         // If the saved tracking link IS a WhatsApp link, open it directly
-        if (isWa && !order.trackingId) {
+        if (isWa) {
             window.open(tLink, '_blank');
             return;
         }
@@ -88,15 +97,8 @@ export default function TrackingPage() {
             .replace(/\//g, '.');
         const partner = order.deliveryPartner || 'Courier';
 
-        let message;
-        if (isWa) {
-            // WhatsApp-based courier: just open the link
-            window.open(tLink, '_blank');
-            return;
-        }
-
-        message = `Your order has been dispatched on ${dispatchDate} Via ${partner}. Use tracking ID [${order.trackingId}] to follow your delivery using link [${tLink || 'https://snahorganics.com'}]. Thanks for choosing SNAH Organics.\nwww.snahorganics.com\n\nPlease Note ⚠️ : Opening video is must to claim the parcel issues.`;
-        const phone = customer.phone.replace(/[^0-9]/g, '');
+        const message = `Hello ${name}, your order has been dispatched on ${dispatchDate} via ${partner}. Use tracking ID [${order.trackingId}] to follow your delivery using link [${tLink || 'https://snahorganics.com'}]. Thanks for choosing SNAH Organics.\n\nwww.snahorganics.com\n\nPlease Note ⚠️ : Opening video is must to claim the parcel issues.`;
+        
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
     };
 
